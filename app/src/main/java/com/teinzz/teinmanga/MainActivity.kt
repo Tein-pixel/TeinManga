@@ -105,7 +105,7 @@ private fun TeinMangaApp() {
             } catch (_: Exception) { }
             val updated = (localItems.mapNotNull { it.localUri } + uri.toString()).distinct()
             prefs.edit().putStringSet("local_items", updated.toMutableSet()).apply()
-            localItems = updated.map { Comic(id = it, title = displayName(Uri.parse(it)), localUri = it) }
+            localItems = updated.map { Comic(id = it, title = displayName(context, Uri.parse(it)), localUri = it) }
             tab = "Library"
         }
     }
@@ -248,7 +248,7 @@ private fun TeinMangaApp() {
                                         LocalComicCard(comic, onOpen = {
                                             scope.launch {
                                                 val uri = Uri.parse(comic.localUri)
-                                                val name = displayName(uri).lowercase()
+                                                val name = displayName(context, uri).lowercase()
                                                 history = (history + (comic.localUri ?: comic.id)).toSet()
                                                 prefs.edit().putStringSet("history", history.toMutableSet()).apply()
                                                 if (name.endsWith(".cbz") || name.endsWith(".zip")) {
