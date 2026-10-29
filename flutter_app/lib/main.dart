@@ -134,8 +134,84 @@ class SearchChapters extends SearchDelegate<Chapter?> {
     ));
   }
 }
-class Tile extends StatefulWidget { const Tile({super.key,required this.chapter,required this.onTap,required this.onChanged});final Chapter chapter;final VoidCallback onTap,onChanged;@override State<Tile> createState()=>_TileState(); }
-class _TileState extends State<Tile>{bool saved=false;@override void initState(){super.initState();load();}Future<void> load()async{final b=await Store.bookmarks();if(mounted)setState(()=>saved=b.contains(widget.chapter.id));}@override Widget build(BuildContext context)=>Material(color:surface,borderRadius:BorderRadius.circular(16),child:InkWell(borderRadius:BorderRadius.circular(16),onTap:widget.onTap,child:Padding(padding:const EdgeInsets.all(10),child:Row(children:[ClipRRect(borderRadius:BorderRadius.circular(11),child:SizedBox(width:76,height:94,child:SvgPicture.asset(widget.chapter.thumbnail,fit:BoxFit.cover))),const SizedBox(width:13),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,mainAxisAlignment:MainAxisAlignment.center,children:[Text(widget.chapter.title,maxLines:2,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:13,height:1.25,fontWeight:FontWeight.w700,color:white)),const SizedBox(height:7),Text(widget.chapter.date,style:const TextStyle(fontSize:10,color:muted)),const SizedBox(height:8),Row(children:[const Icon(Icons.menu_book_rounded,size:13,color:blue),const SizedBox(width:5),Text('${widget.chapter.images.length} halaman',style:const TextStyle(fontSize:10,color:muted))])])),IconButton(visualDensity:VisualDensity.compact,onPressed:()async{await Store.toggle(widget.chapter.id);if(mounted)setState(()=>saved=!saved);widget.onChanged();},icon:Icon(saved?Icons.bookmark_rounded:Icons.bookmark_border_rounded,color:saved?blue:muted,size:22))])));}
+class Tile extends StatefulWidget {
+  const Tile({super.key, required this.chapter, required this.onTap, required this.onChanged});
+  final Chapter chapter;
+  final VoidCallback onTap;
+  final VoidCallback onChanged;
+  @override
+  State<Tile> createState() => _TileState();
+}
+
+class _TileState extends State<Tile> {
+  bool saved = false;
+
+  @override
+  void initState() {
+    super.initState();
+    load();
+  }
+
+  Future<void> load() async {
+    final bookmarks = await Store.bookmarks();
+    if (mounted) setState(() => saved = bookmarks.contains(widget.chapter.id));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: surface,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: widget.onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(11),
+                child: SizedBox(
+                  width: 76,
+                  height: 94,
+                  child: SvgPicture.asset(widget.chapter.thumbnail, fit: BoxFit.cover),
+                ),
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(widget.chapter.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, height: 1.25, fontWeight: FontWeight.w700, color: white)),
+                    const SizedBox(height: 7),
+                    Text(widget.chapter.date, style: const TextStyle(fontSize: 10, color: muted)),
+                    const SizedBox(height: 8),
+                    Row(children: [
+                      const Icon(Icons.menu_book_rounded, size: 13, color: blue),
+                      const SizedBox(width: 5),
+                      Text(widget.chapter.images.length.toString() + ' halaman', style: const TextStyle(fontSize: 10, color: muted)),
+                    ]),
+                  ],
+                ),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                onPressed: () async {
+                  await Store.toggle(widget.chapter.id);
+                  if (mounted) setState(() => saved = !saved);
+                  widget.onChanged();
+                },
+                icon: Icon(saved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded, color: saved ? blue : muted, size: 22),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class Library extends StatefulWidget { const Library({super.key,required this.chapters,required this.bookmarks,required this.onChanged});final List<Chapter> chapters;final bool bookmarks;final VoidCallback onChanged;@override State<Library> createState()=>_LibraryState(); }
 class _LibraryState extends State<Library> {
   Future<List<Chapter>> items() async {
