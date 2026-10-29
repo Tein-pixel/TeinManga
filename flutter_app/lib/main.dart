@@ -141,7 +141,8 @@ class Store {
 }
 
 class ManhwaKuApp extends StatelessWidget {
-  const ManhwaKuApp({super.key});
+  const ManhwaKuApp({super.key, this.showLiveHome = true});
+  final bool showLiveHome;
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'ManhwaKu', debugShowCheckedModeBanner: false,
@@ -159,14 +160,15 @@ class ManhwaKuApp extends StatelessWidget {
         )),
       ),
     ),
-    home: const AppShell(),
+    home: AppShell(showLiveHome: showLiveHome),
   );
 }
 
 typedef OpenComicPage = Future<void> Function(String title, String url, String source);
 
 class AppShell extends StatefulWidget {
-  const AppShell({super.key});
+  const AppShell({super.key, required this.showLiveHome});
+  final bool showLiveHome;
   @override
   State<AppShell> createState() => _AppShellState();
 }
@@ -188,7 +190,7 @@ class _AppShellState extends State<AppShell> {
     body: SafeArea(
       top: false,
       child: IndexedStack(index: tab, children: [
-        HomePage(onOpen: openSource),
+        HomePage(onOpen: openSource, live: widget.showLiveHome, onBrowse: () => setState(() => tab = 1)),
         BrowsePage(onOpen: openSource),
         CollectionPage(onOpen: openPage),
       ]),
@@ -206,7 +208,220 @@ class _AppShellState extends State<AppShell> {
 }
 
 class HomePage extends StatelessWidget {
-  const HomePage({super.key, required this.onOpen});
+  const HomePage({super.key, required this.onOpen, this.live = true, this.onBrowse});
+  final OpenComicPage onOpen;
+  final bool live;
+  final VoidCallback? onBrowse;
+
+  @override
+  Widget build(BuildContext context) {
+    if (live) {
+      return HomeLivePage(
+        onBrowse: onBrowse ?? () {},
+      );
+    }
+    return HomeCatalogPage(onOpen: onOpen);
+  }
+}
+
+class HomeLivePage extends StatefulWidget {
+  const HomeLivePage({super.key, required this.onBrowse});
+  final VoidCallback onBrowse;
+
+  @override
+  State<HomeLivePage> createState() => _HomeLivePageState();
+}
+
+class _HomeLivePageState extends State<HomeLivePage> {
+  late final WebViewController controller;
+  String currentUrl = sources.first.url;
+  String? errorMessage;
+  int progress = 0;
+  bool loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    controller = WebViewController();
+    configure();
+  }
+
+  Future<void> configure() async {
+    try {
+      await controller.setJavaScriptMode(JavaScriptMode.unrestricted);
+      await controller.setBackgroundColor(bg);
+      await controller.setNavigationDelegate(NavigationDelegate(
+        onProgress: (value) {
+          if (mounted) setState(() => progress = value);
+        },
+        onPageStarted: (url) {
+          if (!mounted) return;
+          setState(() {
+            currentUrl = url;
+            loading = true;
+            progress = 0;
+            errorMessage = null;
+          });
+        },
+        onPageFinished: (url) async {
+          String title = '';
+          try { title = (await controller.getTitle()) ?? ''; } catch (_) {}
+          if (!mounted) return;
+          setState(() {
+            currentUrl = url;
+            loading = false;
+            progress = 100;
+            errorMessage = null;
+          });
+          await Store.addHistory(PageEntry(
+            title: title.trim().isEmpty ? 'WEBTOON' : title.trim(),
+            url: url,
+            source: 'WEBTOON',
+          ));
+        },
+        onWebResourceError: (error) {
+          if (error.isForMainFrame ?? true) {
+            if (!mounted) return;
+            setState(() {
+              loading = false;
+              errorMessage = 'Katalog gagal dimuat. Periksa koneksi atau buka lewat browser.';
+            });
+          }
+        },
+      ));
+      await controller.loadRequest(Uri.parse(currentUrl));
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        loading = false;
+        errorMessage = 'Situs tidak bisa dibuka di dalam aplikasi.';
+      });
+    }
+  }
+
+  Future<void> openExternal() async {
+    final uri = Uri.tryParse(currentUrl);
+    if (uri == null || !uri.hasScheme) return;
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Browser eksternal tidak tersedia.')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final top = MediaQuery.paddingOf(context).top;
+    return Column(
+      children: [
+        Padding(
+          padding: EdgeInsets.fromLTRB(17, top + 7, 9, 8),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: blue.withValues(alpha: .13),
+                  borderRadius: BorderRadius.circular(13),
+                  border: Border.all(color: blue.withValues(alpha: .35)),
+                ),
+                child: const Icon(Icons.menu_book_rounded, color: blue, size: 22),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('ManhwaKu', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900)),
+                    Text('KATALOG WEBTOON LIVE', style: TextStyle(fontSize: 9, letterSpacing: 1.1, color: muted)),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Sumber komik lain',
+                onPressed: widget.onBrowse,
+                icon: const Icon(Icons.grid_view_rounded, color: blue),
+              ),
+              IconButton(
+                tooltip: 'Muat ulang',
+                onPressed: () => controller.reload(),
+                icon: const Icon(Icons.refresh_rounded),
+              ),
+              IconButton(
+                tooltip: 'Buka di browser',
+                onPressed: openExternal,
+                icon: const Icon(Icons.open_in_browser_rounded),
+              ),
+            ],
+          ),
+        ),
+        if (loading && progress < 100)
+          LinearProgressIndicator(
+            value: progress == 0 ? null : progress / 100,
+            minHeight: 2,
+            backgroundColor: Colors.transparent,
+            color: blue,
+          ),
+        Expanded(
+          child: Stack(
+            children: [
+              WebViewWidget(controller: controller),
+              if (errorMessage != null)
+                Positioned.fill(
+                  child: Container(
+                    color: bg,
+                    padding: const EdgeInsets.all(28),
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.wifi_off_rounded, size: 48, color: blue),
+                          const SizedBox(height: 16),
+                          const Text('Katalog belum terbuka', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+                          const SizedBox(height: 8),
+                          Text(
+                            errorMessage!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: muted, fontSize: 12, height: 1.45),
+                          ),
+                          const SizedBox(height: 17),
+                          FilledButton.icon(
+                            onPressed: () {
+                              setState(() {
+                                errorMessage = null;
+                                loading = true;
+                                progress = 0;
+                              });
+                              controller.loadRequest(Uri.parse(currentUrl));
+                            },
+                            icon: const Icon(Icons.refresh_rounded),
+                            label: const Text('Coba lagi'),
+                          ),
+                          TextButton.icon(
+                            onPressed: openExternal,
+                            icon: const Icon(Icons.open_in_browser_rounded),
+                            label: const Text('Buka di browser'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class HomeCatalogPage extends StatelessWidget {
+  const HomeCatalogPage({super.key, required this.onOpen});
   final OpenComicPage onOpen;
 
   @override
