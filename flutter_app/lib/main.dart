@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -164,6 +165,7 @@ class ManhwaKuApp extends StatelessWidget {
   );
 }
 
+typedef OpenSource = Future<void> Function(ComicSource source);
 typedef OpenComicPage = Future<void> Function(String title, String url, String source);
 
 class AppShell extends StatefulWidget {
@@ -209,7 +211,7 @@ class _AppShellState extends State<AppShell> {
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key, required this.onOpen, this.live = true, this.onBrowse});
-  final OpenComicPage onOpen;
+  final OpenSource onOpen;
   final bool live;
   final VoidCallback? onBrowse;
 
@@ -422,7 +424,7 @@ class _HomeLivePageState extends State<HomeLivePage> {
 
 class HomeCatalogPage extends StatelessWidget {
   const HomeCatalogPage({super.key, required this.onOpen});
-  final OpenComicPage onOpen;
+  final OpenSource onOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -545,7 +547,7 @@ class HomeCatalogPage extends StatelessWidget {
 
 class BrowsePage extends StatefulWidget {
   const BrowsePage({super.key, required this.onOpen});
-  final OpenComicPage onOpen;
+  final OpenSource onOpen;
   @override
   State<BrowsePage> createState() => _BrowsePageState();
 }
