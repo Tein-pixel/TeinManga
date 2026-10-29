@@ -1,0 +1,39 @@
+name: ManhwaKu Flutter Android
+on:
+  push:
+    branches: ["main"]
+    paths: ["flutter_app/**", ".github/workflows/flutter-android.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  release-apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: flutter_app
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: "3.47.0"
+          cache: true
+      - name: Generate Android platform scaffold
+        run: flutter create --platforms=android --org com.manhwaku --project-name reader .
+      - name: Resolve dependencies
+        run: flutter pub get
+      - name: Analyze Dart code
+        run: flutter analyze
+      - name: Run tests
+        run: flutter test
+      - name: Build release APK
+        run: flutter build apk --release
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ManhwaKu-release-apk
+          path: flutter_app/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
