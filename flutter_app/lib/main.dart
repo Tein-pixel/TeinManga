@@ -59,7 +59,7 @@ class _HomeState extends State<Home> {
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
         child: Row(children: [
           const Expanded(child: Text('Daftar Chapter', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800))),
-          Text(widget.chapters.length.toString() + ' chapter', style: const TextStyle(color: muted, fontSize: 11)),
+          Text('${widget.chapters.length} chapter', style: const TextStyle(color: muted, fontSize: 11)),
         ]),
       )),
       SliverPadding(
@@ -190,7 +190,7 @@ class _TileState extends State<Tile> {
                     Row(children: [
                       const Icon(Icons.menu_book_rounded, size: 13, color: blue),
                       const SizedBox(width: 5),
-                      Text(widget.chapter.images.length.toString() + ' halaman', style: const TextStyle(fontSize: 10, color: muted)),
+                      Text('${widget.chapter.images.length} halaman', style: const TextStyle(fontSize: 10, color: muted)),
                     ]),
                   ],
                 ),
@@ -403,7 +403,7 @@ class _ReaderState extends State<Reader> {
                       ),
                     ),
                     const SizedBox(width: 10),
-                    Text((page + 1).toString() + '/' + current.images.length.toString(), style: const TextStyle(fontSize: 11, color: white)),
+                    Text('${page + 1}/${current.images.length}', style: const TextStyle(fontSize: 11, color: white)),
                   ],
                 ),
               ),
