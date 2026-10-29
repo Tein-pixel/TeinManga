@@ -89,12 +89,12 @@ private fun TeinMangaApp() {
     var readerPages by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var pageIndex by remember { mutableIntStateOf(0) }
     var localItems by remember {
-        mutableStateOf(prefs.getStringSet("local_items", emptySet())?.toList().orEmpty().map {
+        mutableStateOf(prefs.getStringSet("local_items", mutableSetOf())?.toList().orEmpty().map {
             Comic(id = it, title = displayName(Uri.parse(it)), localUri = it)
         })
     }
-    var favorites by remember { mutableStateOf(prefs.getStringSet("favorites", emptySet()) ?: emptySet()) }
-    var history by remember { mutableStateOf(prefs.getStringSet("history", emptySet()) ?: emptySet()) }
+    var favorites by remember { mutableStateOf<Set<String>>(prefs.getStringSet("favorites", mutableSetOf())?.toSet() ?: emptySet()) }
+    var history by remember { mutableStateOf<Set<String>>(prefs.getStringSet("history", mutableSetOf())?.toSet() ?: emptySet()) }
 
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
