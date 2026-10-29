@@ -1,8 +1,10 @@
 package com.teinzz.teinmanga
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -90,7 +92,7 @@ private fun TeinMangaApp() {
     var pageIndex by remember { mutableIntStateOf(0) }
     var localItems by remember {
         mutableStateOf(prefs.getStringSet("local_items", mutableSetOf())?.toList().orEmpty().map {
-            Comic(id = it, title = displayName(Uri.parse(it)), localUri = it)
+            Comic(id = it, title = displayName(context, Uri.parse(it)), localUri = it)
         })
     }
     var favorites by remember { mutableStateOf<Set<String>>(prefs.getStringSet("favorites", mutableSetOf())?.toSet() ?: emptySet()) }
@@ -463,17 +465,17 @@ private fun EmptyState(title: String, message: String, action: String?, onAction
     }
 }
 
-private fun displayName(uri: Uri): String {
+private fun displayName(context: Context, uri: Uri): String {
     return try {
-        val cursor = uri.let { u ->
-            // Query is deliberately guarded: some document providers do not expose a display name.
-            val contextUri = u
-            contextUri
+        var displayName: String? = null
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) displayName = cursor.getString(0)
         }
-        val segment = cursor.lastPathSegment.orEmpty().substringAfterLast('/')
-        val decoded = Uri.decode(segment).substringAfterLast(':')
-        decoded.ifBlank { "Komik lokal" }
-    } catch (_: Exception) { "Komik lokal" }
+        displayName?.takeIf { it.isNotBlank() }
+            ?: Uri.decode(uri.lastPathSegment.orEmpty()).substringAfterLast('/').substringAfterLast(':').ifBlank { "Komik lokal" }
+    } catch (_: Exception) {
+        Uri.decode(uri.lastPathSegment.orEmpty()).substringAfterLast('/').substringAfterLast(':').ifBlank { "Komik lokal" }
+    }
 }
 
 private fun searchArchive(term: String): List<Comic> {
