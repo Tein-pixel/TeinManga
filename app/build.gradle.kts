@@ -20,10 +20,6 @@ android {
         release {
             isMinifyEnabled = false
         }
-        debug {
-            applicationIdSuffix = ".debug"
-            versionNameSuffix = "-debug"
-        }
     }
 
     compileOptions {
