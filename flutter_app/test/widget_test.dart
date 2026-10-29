@@ -3,7 +3,7 @@ import 'package:reader/main.dart';
 
 void main() {
   testWidgets('ManhwaKu opens live comic sources without demo chapters', (tester) async {
-    await tester.pumpWidget(const ManhwaKuApp());
+    await tester.pumpWidget(const ManhwaKuApp(showLiveHome: false));
     await tester.pump();
 
     expect(find.text('ManhwaKu'), findsOneWidget);
