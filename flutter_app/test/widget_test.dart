@@ -2,12 +2,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:reader/main.dart';
 
 void main() {
-  testWidgets('ManhwaKu opens home and bundled chapters', (tester) async {
+  testWidgets('ManhwaKu opens live comic sources without demo chapters', (tester) async {
     await tester.pumpWidget(const ManhwaKuApp());
-    // Use fixed pumps: progress indicators in async asset loading may animate continuously.
-    await tester.pump(const Duration(milliseconds: 3000));
-    await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('ManhwaKu'), findsWidgets);
-    expect(find.text('Daftar Chapter'), findsOneWidget);
+    await tester.pump();
+
+    expect(find.text('ManhwaKu'), findsOneWidget);
+    expect(find.text('Platform komik'), findsOneWidget);
+    expect(find.text('WEBTOON'), findsOneWidget);
+    expect(find.text('MANGA Plus'), findsOneWidget);
+    expect(find.text('Mulai membaca'), findsOneWidget);
   });
 }
