@@ -22,6 +22,8 @@ jobs:
           cache: true
       - name: Generate Android platform scaffold
         run: flutter create --platforms=android --org com.manhwaku --project-name reader .
+      - name: Set launcher app name
+        run: sed -i 's/android:label="[^"]*"/android:label="ManhwaKu"/' android/app/src/main/AndroidManifest.xml
       - name: Resolve dependencies
         run: flutter pub get
       - name: Analyze Dart code
