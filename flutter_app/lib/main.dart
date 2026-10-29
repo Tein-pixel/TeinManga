@@ -73,11 +73,7 @@ class Store {
     final result = <PageEntry>[];
     for (final item in raw) {
       try {
-        final data = PageEntry.fromMap(
-          Map<String, dynamic>.from(Uri.splitQueryString('')),
-        );
         // Decode stored JSON entries separately so one bad entry cannot break the list.
-        // The temporary value above is replaced by the JSON-decoded object below.
         final decoded = _decodeEntry(item);
         if (decoded != null && decoded.url.startsWith('http')) result.add(decoded);
       } catch (_) {
@@ -139,7 +135,9 @@ class Store {
     await _write('history', list.take(40).toList());
   }
 
-  static Future<void> clearHistory() async => (await _prefs).remove('history');
+  static Future<void> clearHistory() async {
+    await (await _prefs).remove('history');
+  }
 }
 
 class ManhwaKuApp extends StatelessWidget {
