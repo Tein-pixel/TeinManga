@@ -102,7 +102,7 @@ private fun TeinMangaApp() {
                 context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             } catch (_: Exception) { }
             val updated = (localItems.mapNotNull { it.localUri } + uri.toString()).distinct()
-            prefs.edit().putStringSet("local_items", updated.toSet()).apply()
+            prefs.edit().putStringSet("local_items", updated.toMutableSet()).apply()
             localItems = updated.map { Comic(id = it, title = displayName(Uri.parse(it)), localUri = it) }
             tab = "Library"
         }
@@ -248,7 +248,7 @@ private fun TeinMangaApp() {
                                                 val uri = Uri.parse(comic.localUri)
                                                 val name = displayName(uri).lowercase()
                                                 history = (history + (comic.localUri ?: comic.id)).toSet()
-                                                prefs.edit().putStringSet("history", history).apply()
+                                                prefs.edit().putStringSet("history", history.toMutableSet()).apply()
                                                 if (name.endsWith(".cbz") || name.endsWith(".zip")) {
                                                     val pages = withContext(Dispatchers.IO) { extractArchive(context, uri) }
                                                     if (pages.isNotEmpty()) {
@@ -271,7 +271,7 @@ private fun TeinMangaApp() {
                                         }, onRemove = {
                                             val updated = localItems.filterNot { it.localUri == comic.localUri }
                                             localItems = updated
-                                            prefs.edit().putStringSet("local_items", updated.mapNotNull { it.localUri }.toSet()).apply()
+                                            prefs.edit().putStringSet("local_items", updated.mapNotNull { it.localUri }.toMutableSet()).apply()
                                         })
                                     }
                                 }
@@ -314,7 +314,7 @@ private fun TeinMangaApp() {
                                             isFavorite = favorites.contains(comic.id),
                                             onFavorite = {
                                                 favorites = if (favorites.contains(comic.id)) favorites - comic.id else favorites + comic.id
-                                                prefs.edit().putStringSet("favorites", favorites).apply()
+                                                prefs.edit().putStringSet("favorites", favorites.toMutableSet()).apply()
                                             },
                                             onOpen = {
                                                 history = (history + comic.id).toSet()
