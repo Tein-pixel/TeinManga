@@ -22,8 +22,26 @@ jobs:
           cache: true
       - name: Generate Android platform scaffold
         run: flutter create --platforms=android --org com.manhwaku --project-name reader .
-      - name: Set launcher app name
-        run: sed -i 's/android:label="[^"]*"/android:label="ManhwaKu"/' android/app/src/main/AndroidManifest.xml
+      - name: Set app name and Internet permission
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("android/app/src/main/AndroidManifest.xml")
+          content = path.read_text()
+          label = 'android:label="'
+          start = content.find(label)
+          if start >= 0:
+              end = content.find('"', start + len(label))
+              if end >= 0:
+                  content = content[:start] + 'android:label="ManhwaKu"' + content[end + 1:]
+          if 'android.permission.INTERNET' not in content:
+              manifest_start = content.find('<manifest')
+              manifest_end = content.find('>', manifest_start)
+              if manifest_start < 0 or manifest_end < 0:
+                  raise RuntimeError("AndroidManifest.xml manifest tag missing")
+              content = content[:manifest_end + 1] + '\n    <uses-permission android:name="android.permission.INTERNET" />' + content[manifest_end + 1:]
+          path.write_text(content)
+          PY
       - name: Resolve dependencies
         run: flutter pub get
       - name: Analyze Dart code
@@ -35,7 +53,7 @@ jobs:
       - name: Upload release APK
         uses: actions/upload-artifact@v4
         with:
-          name: ManhwaKu-release-apk
+          name: ManhwaKu-online-reader-release
           path: flutter_app/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 14
