@@ -182,6 +182,199 @@ class _LibraryState extends State<Library> {
     ]),
   );
 }
-class Reader extends StatefulWidget { const Reader({super.key,required this.chapters,required this.chapter});final List<Chapter> chapters;final Chapter chapter;@override State<Reader> createState()=>_ReaderState(); }
-class _ReaderState extends State<Reader>{late Chapter current=widget.chapter;final ScrollController scroll=ScrollController();int page=0;bool saved=false,showBar=true;double get pageHeight=>MediaQuery.sizeOf(context).width*1600/900;@override void initState(){super.initState();scroll.addListener(onScroll);prepare();}Future<void> prepare()async{await Store.read(current.id);final p=await Store.progress(current.id);final b=await Store.bookmarks();if(!mounted)return;setState((){page=p.clamp(0,current.images.length-1);saved=b.contains(current.id);});WidgetsBinding.instance.addPostFrameCallback((_){if(scroll.hasClients&&page>0)scroll.jumpTo((page*pageHeight).clamp(0,scroll.position.maxScrollExtent));});}void onScroll(){if(!scroll.hasClients)return;final p=(scroll.offset/pageHeight).floor().clamp(0,current.images.length-1);if(p!=page){setState(()=>page=p);Store.saveProgress(current.id,p);}}Future<void> switchChapter(int delta)async{final i=widget.chapters.indexOf(current)+delta;if(i<0||i>=widget.chapters.length)return;setState(()=>current=widget.chapters[i]);await Store.read(current.id);final p=await Store.progress(current.id);if(!mounted)return;setState(()=>page=p.clamp(0,current.images.length-1));scroll.jumpTo(0);WidgetsBinding.instance.addPostFrameCallback((_){if(scroll.hasClients&&p>0)scroll.jumpTo((p*pageHeight).clamp(0,scroll.position.maxScrollExtent));});}@override void dispose(){scroll.removeListener(onScroll);scroll.dispose();super.dispose();}@override Widget build(BuildContext context)=>Scaffold(backgroundColor:Colors.black,body:Stack(children:[GestureDetector(onTap:()=>setState(()=>showBar=!showBar),child:ListView.builder(controller:scroll,padding:EdgeInsets.zero,itemCount:current.images.length,itemBuilder:(context,i)=>InteractiveViewer(minScale:1,maxScale:3,panEnabled:true,scaleEnabled:true,child:SvgPicture.asset(current.images[i],width:MediaQuery.sizeOf(context).width,fit:BoxFit.fitWidth,placeholderBuilder:(_)=>const AspectRatio(aspectRatio:9/16,child:Center(child:CircularProgressIndicator(color:blue))))))),if(showBar)Positioned(top:0,left:0,right:0,child:Container(padding:EdgeInsets.fromLTRB(8,MediaQuery.paddingOf(context).top+4,14,12),decoration:BoxDecoration(gradient:LinearGradient(begin:Alignment.topCenter,end:Alignment.bottomCenter,colors:[Colors.black.withValues(alpha:.9),Colors.transparent])),child:Row(children:[IconButton(onPressed:()=>Navigator.pop(context),icon:const Icon(Icons.arrow_back_rounded,color:white)),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(current.title,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:13,fontWeight:FontWeight.w700)),const SizedBox(height:4),ClipRRect(borderRadius:BorderRadius.circular(4),child:LinearProgressIndicator(value:(page+1)/current.images.length,minHeight:3,backgroundColor:Colors.white24,color:blue))])),const SizedBox(width:10),Text('${page+1}/${current.images.length}',style:const TextStyle(fontSize:11,color:white))]))),if(showBar)Positioned(left:16,right:16,bottom:MediaQuery.paddingOf(context).bottom+12,child:Container(padding:const EdgeInsets.symmetric(horizontal:8,vertical:7),decoration:BoxDecoration(color: const Color(0xE6141B27),borderRadius:BorderRadius.circular(20),border:Border.all(color:Colors.white.withValues(alpha:.08)),boxShadow:[BoxShadow(color:Colors.black.withValues(alpha:.3),blurRadius:22)]),child:Row(children:[IconButton(onPressed:()=>switchChapter(-1),icon:const Icon(Icons.skip_previous_rounded),color:current==widget.chapters.first?muted:white),const Spacer(),IconButton(onPressed:()async{await Store.toggle(current.id);final b=await Store.bookmarks();if(mounted)setState(()=>saved=b.contains(current.id));},icon:Icon(saved?Icons.bookmark_rounded:Icons.bookmark_border_rounded,color:saved?blue:white)),const Spacer(),IconButton(onPressed:()=>switchChapter(1),icon:const Icon(Icons.skip_next_rounded),color:current==widget.chapters.last?muted:white)])))]));}
+class Reader extends StatefulWidget {
+  const Reader({super.key, required this.chapters, required this.chapter});
+  final List<Chapter> chapters;
+  final Chapter chapter;
+  @override
+  State<Reader> createState() => _ReaderState();
+}
+
+class _ReaderState extends State<Reader> {
+  late Chapter current = widget.chapter;
+  final ScrollController scroll = ScrollController();
+  int page = 0;
+  bool saved = false;
+  bool showBar = true;
+
+  double get pageHeight => MediaQuery.sizeOf(context).width * 1600 / 900;
+
+  @override
+  void initState() {
+    super.initState();
+    scroll.addListener(onScroll);
+    prepare();
+  }
+
+  Future<void> prepare() async {
+    await Store.read(current.id);
+    final savedPage = await Store.progress(current.id);
+    final bookmarks = await Store.bookmarks();
+    if (!mounted) return;
+    setState(() {
+      page = savedPage.clamp(0, current.images.length - 1);
+      saved = bookmarks.contains(current.id);
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (scroll.hasClients && page > 0) {
+        scroll.jumpTo((page * pageHeight).clamp(0, scroll.position.maxScrollExtent));
+      }
+    });
+  }
+
+  void onScroll() {
+    if (!scroll.hasClients) return;
+    final nextPage = (scroll.offset / pageHeight).floor().clamp(0, current.images.length - 1);
+    if (nextPage != page) {
+      setState(() => page = nextPage);
+      Store.saveProgress(current.id, nextPage);
+    }
+  }
+
+  Future<void> switchChapter(int delta) async {
+    final nextIndex = widget.chapters.indexOf(current) + delta;
+    if (nextIndex < 0 || nextIndex >= widget.chapters.length) return;
+    final nextChapter = widget.chapters[nextIndex];
+    await Store.read(nextChapter.id);
+    final savedPage = await Store.progress(nextChapter.id);
+    if (!mounted) return;
+    setState(() {
+      current = nextChapter;
+      page = savedPage.clamp(0, nextChapter.images.length - 1);
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!scroll.hasClients) return;
+      scroll.jumpTo(0);
+      if (page > 0) {
+        scroll.jumpTo((page * pageHeight).clamp(0, scroll.position.maxScrollExtent));
+      }
+    });
+    final bookmarks = await Store.bookmarks();
+    if (mounted) setState(() => saved = bookmarks.contains(nextChapter.id));
+  }
+
+  @override
+  void dispose() {
+    scroll.removeListener(onScroll);
+    scroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          GestureDetector(
+            onTap: () => setState(() => showBar = !showBar),
+            child: ListView.builder(
+              controller: scroll,
+              padding: EdgeInsets.zero,
+              itemCount: current.images.length,
+              itemBuilder: (context, index) {
+                return InteractiveViewer(
+                  minScale: 1,
+                  maxScale: 3,
+                  panEnabled: true,
+                  scaleEnabled: true,
+                  child: SvgPicture.asset(
+                    current.images[index],
+                    width: MediaQuery.sizeOf(context).width,
+                    fit: BoxFit.fitWidth,
+                    placeholderBuilder: (_) => const AspectRatio(
+                      aspectRatio: 9 / 16,
+                      child: Center(child: CircularProgressIndicator(color: blue)),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          if (showBar)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                padding: EdgeInsets.fromLTRB(8, MediaQuery.paddingOf(context).top + 4, 14, 12),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.black.withValues(alpha: .9), Colors.transparent],
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.arrow_back_rounded, color: white)),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(current.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+                          const SizedBox(height: 4),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: LinearProgressIndicator(
+                              value: (page + 1) / current.images.length,
+                              minHeight: 3,
+                              backgroundColor: Colors.white24,
+                              color: blue,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Text((page + 1).toString() + '/' + current.images.length.toString(), style: const TextStyle(fontSize: 11, color: white)),
+                  ],
+                ),
+              ),
+            ),
+          if (showBar)
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: MediaQuery.paddingOf(context).bottom + 12,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                decoration: BoxDecoration(
+                  color: const Color(0xE6141B27),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white.withValues(alpha: .08)),
+                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .3), blurRadius: 22)],
+                ),
+                child: Row(
+                  children: [
+                    IconButton(
+                      onPressed: () => switchChapter(-1),
+                      icon: const Icon(Icons.skip_previous_rounded),
+                      color: current == widget.chapters.first ? muted : white,
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      onPressed: () async {
+                        await Store.toggle(current.id);
+                        final bookmarks = await Store.bookmarks();
+                        if (mounted) setState(() => saved = bookmarks.contains(current.id));
+                      },
+                      icon: Icon(saved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded, color: saved ? blue : white),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      onPressed: () => switchChapter(1),
+                      icon: const Icon(Icons.skip_next_rounded),
+                      color: current == widget.chapters.last ? muted : white,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class Empty extends StatelessWidget { const Empty({super.key,required this.icon,required this.title,required this.subtitle});final IconData icon;final String title,subtitle;@override Widget build(BuildContext context)=>Padding(padding:const EdgeInsets.symmetric(horizontal:32,vertical:70),child:Column(mainAxisSize:MainAxisSize.min,children:[Container(width:66,height:66,decoration:BoxDecoration(color:surface2,borderRadius:BorderRadius.circular(22)),child:Icon(icon,color:blue,size:28)),const SizedBox(height:16),Text(title,textAlign:TextAlign.center,style:const TextStyle(fontSize:16,fontWeight:FontWeight.w800)),const SizedBox(height:6),Text(subtitle,textAlign:TextAlign.center,style:const TextStyle(color:muted,fontSize:12,height:1.4))]));}
