@@ -212,19 +212,19 @@ class _ReaderState extends State<Reader> {
     final bookmarks = await Store.bookmarks();
     if (!mounted) return;
     setState(() {
-      page = savedPage.clamp(0, current.images.length - 1);
+      page = savedPage.clamp(0, current.images.length - 1).toInt();
       saved = bookmarks.contains(current.id);
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (scroll.hasClients && page > 0) {
-        scroll.jumpTo((page * pageHeight).clamp(0, scroll.position.maxScrollExtent));
+        scroll.jumpTo((page * pageHeight).clamp(0, scroll.position.maxScrollExtent).toDouble());
       }
     });
   }
 
   void onScroll() {
     if (!scroll.hasClients) return;
-    final nextPage = (scroll.offset / pageHeight).floor().clamp(0, current.images.length - 1);
+    final nextPage = (scroll.offset / pageHeight).floor().clamp(0, current.images.length - 1).toInt();
     if (nextPage != page) {
       setState(() => page = nextPage);
       Store.saveProgress(current.id, nextPage);
@@ -240,13 +240,13 @@ class _ReaderState extends State<Reader> {
     if (!mounted) return;
     setState(() {
       current = nextChapter;
-      page = savedPage.clamp(0, nextChapter.images.length - 1);
+      page = savedPage.clamp(0, nextChapter.images.length - 1).toInt();
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!scroll.hasClients) return;
       scroll.jumpTo(0);
       if (page > 0) {
-        scroll.jumpTo((page * pageHeight).clamp(0, scroll.position.maxScrollExtent));
+        scroll.jumpTo((page * pageHeight).clamp(0, scroll.position.maxScrollExtent).toDouble());
       }
     });
     final bookmarks = await Store.bookmarks();
