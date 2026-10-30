@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:reader/main.dart';
 
 void main() {
-  testWidgets('ManhwaKu shows main navigation and official WEBTOON picks', (tester) async {
+  testWidgets('ManhwaKu shows WEBTOON picks and native navigation', (tester) async {
     await tester.pumpWidget(const ManhwaKuApp());
     await tester.pump();
 
