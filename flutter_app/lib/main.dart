@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -359,7 +358,7 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     final screens = <Widget>[
-      HomeTab(onOpen: _openSeries, onSearch: _goSearch, onExplore: () => setState(() => _tab = 1)),
+      HomeTab(onOpen: _openSeries, onSearch: _goSearch, onExplore: () => setState(() => _tab = 1), onFavorites: () => setState(() => _tab = 3), onHistory: () => setState(() => _tab = 4)),
       DiscoveryTab(onOpen: _openSeries),
       SearchTab(onOpen: _openSeries),
       LibraryTab(onOpen: _openSeries, mode: 'favorites'),
@@ -400,11 +399,15 @@ class HomeTab extends StatefulWidget {
     required this.onOpen,
     required this.onSearch,
     required this.onExplore,
+    required this.onFavorites,
+    required this.onHistory,
   });
 
   final OpenSeries onOpen;
   final VoidCallback onSearch;
   final VoidCallback onExplore;
+  final VoidCallback onFavorites;
+  final VoidCallback onHistory;
 
   @override
   State<HomeTab> createState() => _HomeTabState();
@@ -516,8 +519,8 @@ class _HomeTabState extends State<HomeTab> {
               child: Row(
                 children: [
                   _QuickAction(icon: Icons.grid_view_rounded, label: 'Kategori', onTap: widget.onExplore),
-                  _QuickAction(icon: Icons.favorite_rounded, label: 'Favorit', color: const Color(0xFFFF6E8A), onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AboutPage()))),
-                  _QuickAction(icon: Icons.history_rounded, label: 'Riwayat', onTap: () {}),
+                  _QuickAction(icon: Icons.favorite_rounded, label: 'Favorit', color: const Color(0xFFFF6E8A), onTap: widget.onFavorites),
+                  _QuickAction(icon: Icons.history_rounded, label: 'Riwayat', onTap: widget.onHistory),
                   _QuickAction(icon: Icons.local_fire_department_rounded, label: 'Trending', color: const Color(0xFFFFC857), onTap: widget.onExplore),
                 ],
               ),
@@ -1005,7 +1008,6 @@ class _SearchTabState extends State<SearchTab> {
   };
   String _selected = 'Semua';
   Future<List<SeriesItem>>? _future;
-  String _query = '';
 
   @override
   void dispose() {
@@ -1016,7 +1018,6 @@ class _SearchTabState extends State<SearchTab> {
   void _search([String? value]) {
     final query = (value ?? _controller.text).trim();
     setState(() {
-      _query = query;
       _future = CatalogApi.fetch(
         query: query,
         types: _types[_selected]!,
@@ -1073,10 +1074,8 @@ class _SearchTabState extends State<SearchTab> {
                     label: Text(name),
                     selected: selected,
                     onSelected: (_) {
-                      setState(() {
-                        _selected = name;
-                        _search();
-                      });
+                      setState(() => _selected = name);
+                      _search();
                     },
                     selectedColor: accent,
                     backgroundColor: panel,
@@ -1131,72 +1130,87 @@ class _SearchTabState extends State<SearchTab> {
       );
 }
 
-class LibraryTab extends StatelessWidget {
+class LibraryTab extends StatefulWidget {
   const LibraryTab({super.key, required this.onOpen, required this.mode});
   final OpenSeries onOpen;
   final String mode;
 
   @override
-  Widget build(BuildContext context) {
-    final key = mode == 'favorites' ? 'favorites' : 'history';
-    final title = mode == 'favorites' ? 'Favorit' : 'Riwayat baca';
-    return FutureBuilder<List<SeriesItem>>(
-      future: LocalLibrary.read(key),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return const ErrorPanel(title: 'Koleksi gagal dibuka', message: 'Silakan coba kembali.');
-        }
-        if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator(color: accent));
-        }
-        final items = snapshot.data!;
-        return Column(
-          children: [
-            Padding(
-              padding: EdgeInsets.fromLTRB(18, MediaQuery.paddingOf(context).top + 16, 18, 12),
-              child: Row(
-                children: [
-                  Expanded(child: Text(title, style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w900))),
-                  if (items.isNotEmpty)
-                    TextButton(
-                      onPressed: () async {
-                        await LocalLibrary.clear(key);
-                        (context as Element).markNeedsBuild();
-                      },
-                      child: const Text('Hapus', style: TextStyle(color: accent)),
-                    ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: items.isEmpty
-                  ? ErrorPanel(
-                      icon: mode == 'favorites' ? Icons.bookmark_border_rounded : Icons.history_rounded,
-                      title: mode == 'favorites' ? 'Belum ada favorit' : 'Belum ada riwayat',
-                      message: mode == 'favorites'
-                          ? 'Simpan judul dari halaman detail untuk menemukannya di sini.'
-                          : 'Judul yang pernah kamu buka akan tampil di sini.',
-                    )
-                  : GridView.builder(
-                      padding: const EdgeInsets.fromLTRB(14, 8, 14, 20),
-                      itemCount: items.length,
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 3,
-                        mainAxisSpacing: 15,
-                        crossAxisSpacing: 10,
-                        childAspectRatio: .52,
-                      ),
-                      itemBuilder: (context, index) {
-                        final item = items[index];
-                        return SeriesCard(item: item, onTap: () => onOpen(item));
-                      },
-                    ),
-            ),
-          ],
-        );
-      },
-    );
+  State<LibraryTab> createState() => _LibraryTabState();
+}
+
+class _LibraryTabState extends State<LibraryTab> {
+  late Future<List<SeriesItem>> _future;
+
+  String get _key => widget.mode == 'favorites' ? 'favorites' : 'history';
+  String get _title => widget.mode == 'favorites' ? 'Favorit' : 'Riwayat baca';
+
+  @override
+  void initState() {
+    super.initState();
+    _future = LocalLibrary.read(_key);
   }
+
+  Future<void> _clear() async {
+    await LocalLibrary.clear(_key);
+    if (!mounted) return;
+    setState(() => _future = LocalLibrary.read(_key));
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<List<SeriesItem>>(
+        future: _future,
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return const ErrorPanel(title: 'Koleksi gagal dibuka', message: 'Silakan coba kembali.');
+          }
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator(color: accent));
+          }
+          final items = snapshot.data!;
+          return Column(
+            children: [
+              Padding(
+                padding: EdgeInsets.fromLTRB(18, MediaQuery.paddingOf(context).top + 16, 18, 12),
+                child: Row(
+                  children: [
+                    Expanded(child: Text(_title, style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w900))),
+                    if (items.isNotEmpty)
+                      TextButton(
+                        onPressed: _clear,
+                        child: const Text('Hapus', style: TextStyle(color: accent)),
+                      ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: items.isEmpty
+                    ? ErrorPanel(
+                        icon: widget.mode == 'favorites' ? Icons.bookmark_border_rounded : Icons.history_rounded,
+                        title: widget.mode == 'favorites' ? 'Belum ada favorit' : 'Belum ada riwayat',
+                        message: widget.mode == 'favorites'
+                            ? 'Simpan judul dari halaman detail untuk menemukannya di sini.'
+                            : 'Judul yang pernah kamu buka akan tampil di sini.',
+                      )
+                    : GridView.builder(
+                        padding: const EdgeInsets.fromLTRB(14, 8, 14, 20),
+                        itemCount: items.length,
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          mainAxisSpacing: 15,
+                          crossAxisSpacing: 10,
+                          childAspectRatio: .52,
+                        ),
+                        itemBuilder: (context, index) {
+                          final item = items[index];
+                          return SeriesCard(item: item, onTap: () => widget.onOpen(item));
+                        },
+                      ),
+              ),
+            ],
+          );
+        },
+      );
 }
 
 class SeriesDetailsPage extends StatefulWidget {
