@@ -1,11 +1,20 @@
-# ManhwaKu / TeinManga
+# ManhwaKu
 
-Flutter reader project for Android 10+ with application ID `com.manhwaku.reader`.
+Flutter Android app for Android 10+ (application ID: com.manhwaku.reader).
 
-The Flutter project is in `flutter_app/`. It includes an original offline demo story with covers and six illustrated SVG comic pages. No internet connection is required to read the bundled chapters.
+## Features
+- Native dark discovery home inspired by modern comic-reader apps.
+- Live catalogue search and trending/latest discovery for manga, manhwa, manhua, and novels.
+- Safe-content and licensed-entry filters on the catalogue query.
+- Series details, covers, synopsis, author, status, and rating where supplied by the catalogue.
+- On-device favourites and reading history using SharedPreferences.
+- Source-page WebView with loading state, retry, and external-browser fallback.
+- Responsive three-column catalogue grid and horizontal featured carousel.
 
-Features: dark black/electric-blue/white UI, animated splash, home, bookmarks, history, search, saved page progress, vertical lazy reader, zoom gestures and previous/next chapter.
+## Content and licensing
+ManhwaKu is a discovery/catalogue client, not a chapter-hosting service. It does not download, scrape, bundle, or redistribute third-party chapters. Tapping a title opens its catalogue/source page; chapter access, regional availability, account requirements, and paid/free rules remain controlled by the publisher or platform.
 
-GitHub Actions uses Flutter 3.47 stable, runs dependency resolution, Dart analysis and widget tests, then builds a release APK. Download the `ManhwaKu-release-apk` artifact from a successful Actions run.
+Catalogue metadata is requested from the public MangaBaka API. Requests explicitly filter to the safe content rating and is_licensed=true. MangaBaka data is subject to its licence and attribution requirements; third-party fields remain subject to their respective providers' terms. See https://mangabaka.org/developers/concepts/license-and-attribution.
 
-The bundled comic art and story are original demo content; this is not a live Webtoon catalogue and does not bundle third-party copyrighted chapters.
+## Build
+GitHub Actions resolves Flutter dependencies, runs flutter analyze and flutter test, builds a release APK, and uploads the ManhwaKu-online-reader-release artifact.
