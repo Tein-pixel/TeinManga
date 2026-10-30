@@ -60,6 +60,44 @@ class ManhwaKuApp extends StatelessWidget {
   }
 }
 
+
+class WebtoonPick {
+  const WebtoonPick({
+    required this.title,
+    required this.genre,
+    required this.ageRating,
+    required this.creator,
+    required this.url,
+    required this.coverUrl,
+  });
+
+  final String title;
+  final String genre;
+  final String ageRating;
+  final String creator;
+  final String url;
+  final String coverUrl;
+}
+
+const officialWebtoonPicks = <WebtoonPick>[
+  WebtoonPick(
+    title: 'LOOKISM',
+    genre: 'Aksi',
+    ageRating: '16+',
+    creator: 'Taejoon Park',
+    url: 'https://m.webtoons.com/id/action/lookism/list?title_no=532',
+    coverUrl: 'https://webtoon-phinf.pstatic.net/20231116_134/1700108772436oh00c_JPEG/532.jpg?type=q70',
+  ),
+  WebtoonPick(
+    title: 'Eleceed',
+    genre: 'Fantasi',
+    ageRating: '13+',
+    creator: 'ZHENA • Jeho Son',
+    url: 'https://m.webtoons.com/id/fantasy/eleceed/list?title_no=2034',
+    coverUrl: 'https://webtoon-phinf.pstatic.net/20231116_148/1700108786426s2R7i_JPEG/2034.jpg?type=q70',
+  ),
+];
+
 class SeriesItem {
   const SeriesItem({
     required this.id,
@@ -527,6 +565,80 @@ class _HomeTabState extends State<HomeTab> {
             ),
           ),
           SliverToBoxAdapter(
+            child: SectionHeader(
+              title: 'WEBTOON ORIGINAL',
+              action: 'Lihat semua',
+              onTap: () => _openOfficialWebtoon(
+                context,
+                'WEBTOON Populer',
+                'https://www.webtoons.com/id/ranking/popular',
+              ),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: WebtoonPickCard(
+                      pick: officialWebtoonPicks[0],
+                      onTap: () => _openOfficialWebtoon(
+                        context,
+                        officialWebtoonPicks[0].title,
+                        officialWebtoonPicks[0].url,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: WebtoonPickCard(
+                      pick: officialWebtoonPicks[1],
+                      onTap: () => _openOfficialWebtoon(
+                        context,
+                        officialWebtoonPicks[1].title,
+                        officialWebtoonPicks[1].url,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Material(
+                color: panel,
+                borderRadius: BorderRadius.circular(14),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(14),
+                  onTap: () => _openOfficialWebtoon(
+                    context,
+                    'WEBTOON Populer',
+                    'https://www.webtoons.com/id/ranking/popular',
+                  ),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 15, vertical: 14),
+                    child: Row(
+                      children: [
+                        Icon(Icons.language_rounded, color: accent, size: 22),
+                        SizedBox(width: 11),
+                        Expanded(
+                          child: Text(
+                            'Jelajahi semua komik WEBTOON',
+                            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+                          ),
+                        ),
+                        Icon(Icons.arrow_forward_ios_rounded, color: accent, size: 15),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          SliverToBoxAdapter(
             child: SectionHeader(title: 'Baru diperbarui', action: 'Lihat selengkapnya', onTap: widget.onExplore),
           ),
           SliverToBoxAdapter(
@@ -561,15 +673,6 @@ class _HomeTabState extends State<HomeTab> {
                   onOpen: widget.onOpen,
                 );
               },
-            ),
-          ),
-          const SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(18, 20, 18, 24),
-              child: Text(
-                'Info katalog: metadata dan sampul bersumber dari MangaBaka serta penyedia datanya. Chapter dibaca melalui situs penerbit/penyedia masing-masing.',
-                style: TextStyle(color: muted, fontSize: 10, height: 1.45),
-              ),
             ),
           ),
         ],
@@ -1355,21 +1458,6 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
               child: Text(item.description, style: const TextStyle(color: Color(0xFFD0D0D0), fontSize: 12, height: 1.55)),
             ),
           ),
-          const SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(18, 0, 18, 6),
-              child: Text('TENTANG SUMBER DATA', style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: .7, fontSize: 13)),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(18, 0, 18, 28),
-              child: Text(
-                'ManhwaKu menampilkan metadata dan sampul dari katalog MangaBaka. Tombol di atas membuka halaman judul untuk melihat informasi penerbit serta tautan penyedia. Chapter dan hak akses tetap mengikuti aturan platform masing-masing.',
-                style: const TextStyle(color: muted, fontSize: 11, height: 1.5),
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -1511,44 +1599,277 @@ class _SourceWebPageState extends State<SourceWebPage> {
       );
 }
 
+void _openOfficialWebtoon(BuildContext context, String title, String url) {
+  Navigator.of(context).push<void>(
+    MaterialPageRoute(
+      builder: (_) => OfficialWebtoonPage(title: title, url: url),
+    ),
+  );
+}
+
+class WebtoonPickCard extends StatelessWidget {
+  const WebtoonPickCard({super.key, required this.pick, required this.onTap});
+  final WebtoonPick pick;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+        color: panel,
+        borderRadius: BorderRadius.circular(13),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AspectRatio(
+                aspectRatio: .78,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Image.network(
+                      pick.coverUrl,
+                      fit: BoxFit.cover,
+                      headers: const {'Referer': 'https://m.webtoons.com/'},
+                      errorBuilder: (_, __, ___) => Container(
+                        color: panel2,
+                        alignment: Alignment.center,
+                        child: const Icon(Icons.auto_stories_rounded, color: accent, size: 38),
+                      ),
+                      loadingBuilder: (context, child, progress) => progress == null
+                          ? child
+                          : Container(
+                              color: panel2,
+                              alignment: Alignment.center,
+                              child: const CircularProgressIndicator(
+                                color: accent,
+                                strokeWidth: 2,
+                              ),
+                            ),
+                    ),
+                    Positioned(
+                      left: 7,
+                      top: 7,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: .82),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          pick.ageRating,
+                          style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(9, 9, 9, 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      pick.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      pick.genre + ' • ' + pick.creator,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: muted, fontSize: 9),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+}
+
+class OfficialWebtoonPage extends StatefulWidget {
+  const OfficialWebtoonPage({super.key, required this.title, required this.url});
+  final String title;
+  final String url;
+
+  @override
+  State<OfficialWebtoonPage> createState() => _OfficialWebtoonPageState();
+}
+
+class _OfficialWebtoonPageState extends State<OfficialWebtoonPage> {
+  late final WebViewController _controller;
+  bool _loading = true;
+  bool _failed = false;
+  int _progress = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = WebViewController();
+    _configure();
+  }
+
+  Future<void> _configure() async {
+    try {
+      await _controller.setJavaScriptMode(JavaScriptMode.unrestricted);
+      await _controller.setBackgroundColor(bg);
+      await _controller.setNavigationDelegate(
+        NavigationDelegate(
+          onProgress: (value) {
+            if (mounted) setState(() => _progress = value);
+          },
+          onPageStarted: (_) {
+            if (mounted) setState(() {
+              _loading = true;
+              _failed = false;
+              _progress = 0;
+            });
+          },
+          onPageFinished: (_) {
+            if (mounted) setState(() {
+              _loading = false;
+              _progress = 100;
+            });
+          },
+          onWebResourceError: (error) {
+            if ((error.isForMainFrame ?? true) && mounted) {
+              setState(() {
+                _loading = false;
+                _failed = true;
+              });
+            }
+          },
+        ),
+      );
+      await _controller.loadRequest(Uri.parse(widget.url));
+    } catch (_) {
+      if (mounted) setState(() {
+        _loading = false;
+        _failed = true;
+      });
+    }
+  }
+
+  Future<void> _openExternal() async {
+    final uri = Uri.tryParse(widget.url);
+    if (uri == null) return;
+    try {
+      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!opened && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Browser eksternal tidak tersedia.')),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Tidak bisa membuka browser eksternal.')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(
+          title: Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+          actions: [
+            IconButton(onPressed: () => _controller.reload(), icon: const Icon(Icons.refresh_rounded)),
+            IconButton(onPressed: _openExternal, icon: const Icon(Icons.open_in_browser_rounded)),
+          ],
+        ),
+        body: Stack(
+          children: [
+            WebViewWidget(controller: _controller),
+            if (_loading)
+              Align(
+                alignment: Alignment.topCenter,
+                child: LinearProgressIndicator(
+                  value: _progress == 0 ? null : _progress / 100,
+                  minHeight: 2,
+                  color: accent,
+                  backgroundColor: Colors.transparent,
+                ),
+              ),
+            if (_failed)
+              Positioned.fill(
+                child: Container(
+                  color: bg,
+                  padding: const EdgeInsets.all(26),
+                  child: ErrorPanel(
+                    icon: Icons.language_rounded,
+                    title: 'WEBTOON belum terbuka',
+                    message: 'Periksa koneksi, lalu coba lagi atau buka melalui browser.',
+                    onRetry: () {
+                      setState(() {
+                        _failed = false;
+                        _loading = true;
+                        _progress = 0;
+                      });
+                      _controller.loadRequest(Uri.parse(widget.url));
+                    },
+                    secondary: TextButton.icon(
+                      onPressed: _openExternal,
+                      icon: const Icon(Icons.open_in_browser_rounded),
+                      label: const Text('Buka browser'),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      );
+}
+
 class AboutPage extends StatelessWidget {
   const AboutPage({super.key});
 
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(title: const Text('Tentang ManhwaKu')),
-        body: ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            Container(
-              width: 64,
-              height: 64,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(color: accent, borderRadius: BorderRadius.circular(18)),
-              child: const Icon(Icons.menu_book_rounded, color: Colors.black, size: 35),
-            ),
-            const SizedBox(height: 16),
-            const Text('ManhwaKu', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
-            const Text('Versi 2.1 • Android 10+', style: TextStyle(color: muted, fontSize: 11)),
-            const SizedBox(height: 20),
-            const Text(
-              'Katalog penemuan manga, manhwa, manhua, dan novel. Pencarian, kategori, favorit, serta riwayat tersimpan di perangkat. Untuk membaca chapter, aplikasi membuka halaman sumber sehingga hak cipta, login, wilayah, dan akses gratis/berbayar tetap dikelola oleh penerbit atau platform masing-masing.',
-              style: TextStyle(color: Color(0xFFD0D0D0), fontSize: 13, height: 1.5),
-            ),
-            const SizedBox(height: 20),
-            const Text('SUMBER KATALOG', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12, letterSpacing: .8)),
-            const SizedBox(height: 7),
-            const Text('MangaBaka API — metadata, peringkat, serta sampul. Hanya entri ber-rating aman dan berstatus berlisensi yang diminta oleh aplikasi.', style: TextStyle(color: muted, fontSize: 11, height: 1.5)),
-            const SizedBox(height: 10),
-            TextButton.icon(
-              onPressed: () => launchUrl(Uri.parse('https://mangabaka.org/developers/concepts/license-and-attribution'), mode: LaunchMode.externalApplication),
-              icon: const Icon(Icons.open_in_new_rounded),
-              label: const Text('Lisensi & atribusi katalog'),
-              style: TextButton.styleFrom(alignment: Alignment.centerLeft, foregroundColor: accent),
-            ),
-            const SizedBox(height: 8),
-            const Text('ManhwaKu tidak menyimpan atau mendistribusikan chapter komik pihak ketiga.', style: TextStyle(color: muted, fontSize: 11)),
-          ],
+        body: Padding(
+          padding: const EdgeInsets.all(22),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 64,
+                height: 64,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(color: accent, borderRadius: BorderRadius.circular(18)),
+                child: const Icon(Icons.menu_book_rounded, color: Colors.black, size: 35),
+              ),
+              const SizedBox(height: 16),
+              const Text('ManhwaKu', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
+              const Text('Versi 2.2', style: TextStyle(color: muted, fontSize: 11)),
+              const SizedBox(height: 14),
+              const Text(
+                'Temukan manga, manhwa, manhua, dan novel dalam satu aplikasi.',
+                style: TextStyle(color: Color(0xFFD0D0D0), fontSize: 13, height: 1.5),
+              ),
+              const SizedBox(height: 20),
+              FilledButton.icon(
+                onPressed: () => _openOfficialWebtoon(
+                  context,
+                  'WEBTOON Populer',
+                  'https://www.webtoons.com/id/ranking/popular',
+                ),
+                style: FilledButton.styleFrom(
+                  backgroundColor: accent,
+                  foregroundColor: Colors.black,
+                  minimumSize: const Size.fromHeight(48),
+                ),
+                icon: const Icon(Icons.language_rounded),
+                label: const Text('Buka WEBTOON'),
+              ),
+            ],
+          ),
         ),
       );
 }
