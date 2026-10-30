@@ -247,6 +247,7 @@ String statusLabel(String value) {
 
 class CatalogApi {
   static final http.Client _client = http.Client();
+  static const int pageSize = 25;
 
   static Future<List<SeriesItem>> fetch({
     String? query,
@@ -256,9 +257,8 @@ class CatalogApi {
   }) async {
     final params = <String>[
       'content_rating=safe',
-      'is_licensed=true',
       'with_boosts=false',
-      'limit=36',
+      'limit=' + pageSize.toString(),
       'page=' + page.toString(),
       'sort_by=' + Uri.encodeQueryComponent(sortBy),
     ];
@@ -276,14 +276,14 @@ class CatalogApi {
     final response = await _client
         .get(uri, headers: const {
           'Accept': 'application/json',
-          'User-Agent': 'ManhwaKu/2.1 Android',
+          'User-Agent': 'ManhwaKu/2.3 Android',
         })
         .timeout(const Duration(seconds: 22));
 
     if (response.statusCode != 200) {
       String message = 'Layanan katalog sedang bermasalah.';
       try {
-        final data = jsonDecode(response.body);
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
         if (data is Map && data['message'] != null) {
           message = data['message'].toString();
         }
@@ -1003,21 +1003,69 @@ class _DiscoveryTabState extends State<DiscoveryTab> {
     'Manhwa': ['manhwa'],
     'Manhua': ['manhua'],
     'Novel': ['novel'],
+    'OEL': ['oel'],
+    'Lainnya': ['other'],
   };
+
   String _selected = 'Semua';
-  late Future<List<SeriesItem>> _future;
+  final List<SeriesItem> _items = [];
+  int _page = 0;
+  int _requestId = 0;
+  bool _loading = true;
+  bool _loadingMore = false;
+  bool _hasMore = true;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _load(reset: true);
   }
 
-  void _load() {
-    _future = CatalogApi.fetch(
-      types: _filters[_selected]!,
-      sortBy: 'trending_7d',
-    );
+  Future<void> _load({bool reset = false}) async {
+    if (!reset && (_loading || _loadingMore || !_hasMore)) return;
+    final request = ++_requestId;
+    final nextPage = reset ? 1 : _page + 1;
+
+    setState(() {
+      if (reset) {
+        _items.clear();
+        _page = 0;
+        _loading = true;
+        _loadingMore = false;
+        _hasMore = true;
+      } else {
+        _loadingMore = true;
+      }
+      _error = null;
+    });
+
+    try {
+      final results = await CatalogApi.fetch(
+        types: _filters[_selected]!,
+        sortBy: 'trending_7d',
+        page: nextPage,
+      );
+      if (!mounted || request != _requestId) return;
+
+      setState(() {
+        final seen = _items.map((item) => item.id).toSet();
+        for (final item in results) {
+          if (seen.add(item.id)) _items.add(item);
+        }
+        _page = nextPage;
+        _hasMore = results.length >= CatalogApi.pageSize;
+        _loading = false;
+        _loadingMore = false;
+      });
+    } catch (_) {
+      if (!mounted || request != _requestId) return;
+      setState(() {
+        _loading = false;
+        _loadingMore = false;
+        _error = 'Katalog gagal dimuat. Periksa koneksi lalu coba lagi.';
+      });
+    }
   }
 
   @override
@@ -1027,8 +1075,8 @@ class _DiscoveryTabState extends State<DiscoveryTab> {
             padding: EdgeInsets.fromLTRB(18, MediaQuery.paddingOf(context).top + 16, 18, 10),
             child: Row(
               children: [
-                const Expanded(child: Text('Baru & Hot', style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900))),
-                IconButton(onPressed: () => setState(_load), icon: const Icon(Icons.refresh_rounded)),
+                const Expanded(child: Text('Jelajahi', style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900))),
+                IconButton(onPressed: () => _load(reset: true), icon: const Icon(Icons.refresh_rounded)),
               ],
             ),
           ),
@@ -1044,10 +1092,10 @@ class _DiscoveryTabState extends State<DiscoveryTab> {
                   child: ChoiceChip(
                     label: Text(name),
                     selected: selected,
-                    onSelected: (_) => setState(() {
-                      _selected = name;
-                      _load();
-                    }),
+                    onSelected: (_) {
+                      setState(() => _selected = name);
+                      _load(reset: true);
+                    },
                     selectedColor: accent,
                     backgroundColor: panel,
                     labelStyle: TextStyle(color: selected ? Colors.black : ink, fontWeight: FontWeight.w800, fontSize: 11),
@@ -1060,33 +1108,50 @@ class _DiscoveryTabState extends State<DiscoveryTab> {
           ),
           const SizedBox(height: 7),
           Expanded(
-            child: FutureBuilder<List<SeriesItem>>(
-              future: _future,
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return ErrorPanel(
-                    message: 'Gagal mengambil katalog. Periksa koneksi internet.',
-                    onRetry: () => setState(_load),
-                  );
-                }
-                if (!snapshot.hasData) return const Center(child: CircularProgressIndicator(color: accent));
-                if (snapshot.data!.isEmpty) return const ErrorPanel(message: 'Belum ada judul untuk kategori ini.');
-                return GridView.builder(
-                  padding: const EdgeInsets.fromLTRB(14, 8, 14, 22),
-                  itemCount: snapshot.data!.length,
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3,
-                    mainAxisSpacing: 15,
-                    crossAxisSpacing: 10,
-                    childAspectRatio: .52,
-                  ),
-                  itemBuilder: (context, index) {
-                    final item = snapshot.data![index];
-                    return SeriesCard(item: item, onTap: () => widget.onOpen(item));
-                  },
-                );
-              },
-            ),
+            child: _loading && _items.isEmpty
+                ? const Center(child: CircularProgressIndicator(color: accent))
+                : _error != null && _items.isEmpty
+                    ? ErrorPanel(message: _error!, onRetry: () => _load(reset: true))
+                    : _items.isEmpty
+                        ? const ErrorPanel(message: 'Belum ada judul pada kategori ini.')
+                        : Column(
+                            children: [
+                              Expanded(
+                                child: GridView.builder(
+                                  padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
+                                  itemCount: _items.length,
+                                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: 3,
+                                    mainAxisSpacing: 15,
+                                    crossAxisSpacing: 10,
+                                    childAspectRatio: .52,
+                                  ),
+                                  itemBuilder: (context, index) {
+                                    final item = _items[index];
+                                    return SeriesCard(item: item, onTap: () => widget.onOpen(item));
+                                  },
+                                ),
+                              ),
+                              if (_error != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 6),
+                                  child: Text(_error!, style: const TextStyle(color: muted, fontSize: 10)),
+                                ),
+                              if (_hasMore)
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(14, 2, 14, 9),
+                                  child: SizedBox(
+                                    width: double.infinity,
+                                    child: OutlinedButton(
+                                      onPressed: _loadingMore ? null : () => _load(),
+                                      child: _loadingMore
+                                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: accent))
+                                          : const Text('Muat lebih banyak'),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
           ),
         ],
       );
@@ -1108,9 +1173,19 @@ class _SearchTabState extends State<SearchTab> {
     'Manhwa': ['manhwa'],
     'Manhua': ['manhua'],
     'Novel': ['novel'],
+    'OEL': ['oel'],
+    'Lainnya': ['other'],
   };
+
   String _selected = 'Semua';
-  Future<List<SeriesItem>>? _future;
+  final List<SeriesItem> _items = [];
+  int _page = 0;
+  int _requestId = 0;
+  bool _searched = false;
+  bool _loading = false;
+  bool _loadingMore = false;
+  bool _hasMore = false;
+  String? _error;
 
   @override
   void dispose() {
@@ -1118,15 +1193,53 @@ class _SearchTabState extends State<SearchTab> {
     super.dispose();
   }
 
-  void _search([String? value]) {
-    final query = (value ?? _controller.text).trim();
+  Future<void> _search({bool reset = true}) async {
+    if (!reset && (_loading || _loadingMore || !_hasMore)) return;
+    final request = ++_requestId;
+    final query = _controller.text.trim();
+    final nextPage = reset ? 1 : _page + 1;
+
     setState(() {
-      _future = CatalogApi.fetch(
+      if (reset) {
+        _items.clear();
+        _page = 0;
+        _loading = true;
+        _loadingMore = false;
+        _hasMore = true;
+        _searched = true;
+      } else {
+        _loadingMore = true;
+      }
+      _error = null;
+    });
+
+    try {
+      final results = await CatalogApi.fetch(
         query: query,
         types: _types[_selected]!,
-        sortBy: query.isEmpty ? 'popularity_desc' : 'relevance_desc',
+        sortBy: query.isEmpty ? 'popularity_asc' : 'relevance_desc',
+        page: nextPage,
       );
-    });
+      if (!mounted || request != _requestId) return;
+
+      setState(() {
+        final seen = _items.map((item) => item.id).toSet();
+        for (final item in results) {
+          if (seen.add(item.id)) _items.add(item);
+        }
+        _page = nextPage;
+        _hasMore = results.length >= CatalogApi.pageSize;
+        _loading = false;
+        _loadingMore = false;
+      });
+    } catch (_) {
+      if (!mounted || request != _requestId) return;
+      setState(() {
+        _loading = false;
+        _loadingMore = false;
+        _error = 'Pencarian gagal. Periksa koneksi lalu coba lagi.';
+      });
+    }
   }
 
   @override
@@ -1144,7 +1257,7 @@ class _SearchTabState extends State<SearchTab> {
             child: TextField(
               controller: _controller,
               textInputAction: TextInputAction.search,
-              onSubmitted: _search,
+              onSubmitted: (_) => _search(),
               decoration: InputDecoration(
                 hintText: 'Masukkan judul atau nama seri',
                 hintStyle: const TextStyle(color: muted, fontSize: 12),
@@ -1152,7 +1265,7 @@ class _SearchTabState extends State<SearchTab> {
                 suffixIcon: IconButton(
                   onPressed: () {
                     _controller.clear();
-                    _search('');
+                    _search();
                   },
                   icon: const Icon(Icons.close_rounded, color: muted),
                 ),
@@ -1192,42 +1305,60 @@ class _SearchTabState extends State<SearchTab> {
           ),
           const SizedBox(height: 8),
           Expanded(
-            child: _future == null
+            child: !_searched
                 ? const ErrorPanel(
                     icon: Icons.manage_search_rounded,
                     title: 'Temukan cerita favoritmu',
-                    message: 'Cari berdasarkan judul, lalu filter menurut jenis bacaan.',
+                    message: 'Cari berdasarkan judul atau jelajahi katalog berdasarkan jenis bacaan.',
                   )
-                : FutureBuilder<List<SeriesItem>>(
-                    future: _future,
-                    builder: (context, snapshot) {
-                      if (snapshot.hasError) {
-                        return ErrorPanel(message: 'Pencarian gagal. Coba lagi.', onRetry: _search);
-                      }
-                      if (!snapshot.hasData) return const Center(child: CircularProgressIndicator(color: accent));
-                      if (snapshot.data!.isEmpty) {
-                        return const ErrorPanel(
-                          icon: Icons.search_off_rounded,
-                          title: 'Judul tidak ditemukan',
-                          message: 'Coba kata kunci atau kategori yang berbeda.',
-                        );
-                      }
-                      return GridView.builder(
-                        padding: const EdgeInsets.fromLTRB(14, 8, 14, 22),
-                        itemCount: snapshot.data!.length,
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 3,
-                          mainAxisSpacing: 15,
-                          crossAxisSpacing: 10,
-                          childAspectRatio: .52,
-                        ),
-                        itemBuilder: (context, index) {
-                          final item = snapshot.data![index];
-                          return SeriesCard(item: item, onTap: () => widget.onOpen(item));
-                        },
-                      );
-                    },
-                  ),
+                : _loading && _items.isEmpty
+                    ? const Center(child: CircularProgressIndicator(color: accent))
+                    : _error != null && _items.isEmpty
+                        ? ErrorPanel(message: _error!, onRetry: () => _search())
+                        : _items.isEmpty
+                            ? const ErrorPanel(
+                                icon: Icons.search_off_rounded,
+                                title: 'Judul tidak ditemukan',
+                                message: 'Coba kata kunci atau kategori yang berbeda.',
+                              )
+                            : Column(
+                                children: [
+                                  Expanded(
+                                    child: GridView.builder(
+                                      padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
+                                      itemCount: _items.length,
+                                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                        crossAxisCount: 3,
+                                        mainAxisSpacing: 15,
+                                        crossAxisSpacing: 10,
+                                        childAspectRatio: .52,
+                                      ),
+                                      itemBuilder: (context, index) {
+                                        final item = _items[index];
+                                        return SeriesCard(item: item, onTap: () => widget.onOpen(item));
+                                      },
+                                    ),
+                                  ),
+                                  if (_error != null)
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 6),
+                                      child: Text(_error!, style: const TextStyle(color: muted, fontSize: 10)),
+                                    ),
+                                  if (_hasMore)
+                                    Padding(
+                                      padding: const EdgeInsets.fromLTRB(14, 2, 14, 9),
+                                      child: SizedBox(
+                                        width: double.infinity,
+                                        child: OutlinedButton(
+                                          onPressed: _loadingMore ? null : () => _search(reset: false),
+                                          child: _loadingMore
+                                              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: accent))
+                                              : const Text('Muat lebih banyak'),
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
           ),
         ],
       );
