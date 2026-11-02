@@ -201,7 +201,7 @@ fun normalizeTitle(input: String): String =
 
 fun canonicalTitle(input: String): String {
     val cleaned = input.trim().replace(
-        Regex("""\\s*[\\(\\[]\\s*pre[\\s-]?serialization\\s*[\\)\\]]\\s*$""", RegexOption.IGNORE_CASE),
+        Regex("""\s*[\(\[]\s*pre[\s-]?serialization\s*[\)\]]\s*$""", RegexOption.IGNORE_CASE),
         ""
     ).trim()
     val normalized = cleaned.lowercase(Locale.ROOT).replace(Regex("[^a-z0-9]"), "")
@@ -211,7 +211,7 @@ fun canonicalTitle(input: String): String {
 }
 
 fun isPreSerialization(title: String): Boolean =
-    Regex("""\\bpre[\\s-]?serialization\\b""", RegexOption.IGNORE_CASE).containsMatchIn(title)
+    Regex("""\bpre[\s-]?serialization\b""", RegexOption.IGNORE_CASE).containsMatchIn(title)
 
 private fun pickTitle(titles: JSONArray?, originalLanguage: String): String {
     if (titles == null) return ""
