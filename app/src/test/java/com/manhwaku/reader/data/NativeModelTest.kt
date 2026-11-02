@@ -24,6 +24,15 @@ class NativeModelTest {
     }
 
     @Test
+    fun synopsisMarkdownIsConvertedToReadableText() {
+        val formatted = cleanSynopsis(
+            "**Original Webtoon:**\n[Naver Webtoon](https://example.test/title)\n\n# Synopsis\nA story."
+        )
+
+        assertEquals("Original Webtoon:\nNaver Webtoon\n\nSynopsis\nA story.", formatted)
+    }
+
+    @Test
     fun mangaDexParserKeepsSafeTitleAndBuildsCoverMetadata() {
         val item = Series.fromMangaDex(mangaDexRecord())
 

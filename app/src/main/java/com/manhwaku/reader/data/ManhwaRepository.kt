@@ -1,5 +1,6 @@
 package com.manhwaku.reader.data
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -78,9 +79,27 @@ class ManhwaRepository {
         latest: Boolean = false
     ): List<Series> = withContext(Dispatchers.IO) {
         val cleanQuery = canonicalTitle(query).trim()
-        val mangaBaka = runCatching { searchMangaBaka(cleanQuery, page, type, latest) }.getOrDefault(emptyList())
-        val mangaDex = if (type in setOf("all", "manga", "manhwa", "manhua", "webtoon")) {
-            runCatching { searchMangaDex(cleanQuery, page, type, latest) }.getOrDefault(emptyList())
+        var mangaBakaFailure: Exception? = null
+        val mangaBaka = try {
+            searchMangaBaka(cleanQuery, page, type, latest)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            mangaBakaFailure = error
+            emptyList()
+        }
+
+        val mangaDexRequested = type in setOf("all", "manga", "manhwa", "manhua", "webtoon")
+        var mangaDexFailure: Exception? = null
+        val mangaDex = if (mangaDexRequested) {
+            try {
+                searchMangaDex(cleanQuery, page, type, latest)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                mangaDexFailure = error
+                emptyList()
+            }
         } else emptyList()
 
         val merged = LinkedHashMap<String, Series>()
@@ -103,6 +122,12 @@ class ManhwaRepository {
                     availableLanguages = item.availableLanguages
                 )
             } else item
+        }
+        if (merged.isEmpty() && (mangaBakaFailure != null || (mangaDexRequested && mangaDexFailure != null))) {
+            throw IllegalStateException(
+                "Katalog sedang tidak merespons. Periksa koneksi lalu coba lagi.",
+                mangaBakaFailure ?: mangaDexFailure
+            )
         }
         merged.values.toList()
     }
@@ -186,10 +211,10 @@ class ManhwaRepository {
             "includes%5B%5D=author",
             "order%5Brelevance%5D=desc"
         )
-        val data = runCatching {
-            requestJson("https://api.mangadex.org/manga?${params.joinToString("&")}", mangaDex = true)
-                .optJSONArray("data") ?: JSONArray()
-        }.getOrElse { return@withContext null }
+        val data = requestJson(
+            "https://api.mangadex.org/manga?${params.joinToString("&")}",
+            mangaDex = true
+        ).optJSONArray("data") ?: JSONArray()
 
         val target = normalizeTitle(query)
         val matches = mutableListOf<Series>()

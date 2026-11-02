@@ -57,19 +57,20 @@ import com.manhwaku.reader.data.LibraryStore
 import com.manhwaku.reader.data.ManhwaRepository
 import com.manhwaku.reader.data.Series
 import com.manhwaku.reader.data.canonicalTitle
+import com.manhwaku.reader.data.cleanSynopsis
 import com.manhwaku.reader.data.normalizeTitle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private val Bg = Color(0xFF080D16)
-private val Panel = Color(0xFF111A29)
-private val Panel2 = Color(0xFF19263A)
-private val Accent = Color(0xFF36C5F0)
-private val AccentAlt = Color(0xFF9B8CFF)
-private val Ink = Color(0xFFF4F7FC)
-private val Muted = Color(0xFF8F9BAD)
-private val Stroke = Color(0xFF26364B)
+private val Bg = Color(0xFF080B13)
+private val Panel = Color(0xFF111827)
+private val Panel2 = Color(0xFF1A2740)
+private val Accent = Color(0xFF78A6FF)
+private val AccentAlt = Color(0xFFAB91FF)
+private val Ink = Color(0xFFF7F8FC)
+private val Muted = Color(0xFF97A4B8)
+private val Stroke = Color(0xFF2A3952)
 
 @Composable
 fun ManhwaKuApp() {
@@ -175,20 +176,23 @@ private fun HomeScreen(
     var latest by remember { mutableStateOf<List<Series>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf("") }
+    var emptyCatalogue by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var showAbout by remember { mutableStateOf(false) }
 
     suspend fun load() {
         loading = true
         error = ""
+        emptyCatalogue = false
         try {
             val trendingResult = repository.search(page = 1, latest = false)
             val latestResult = repository.search(page = 1, latest = true)
             trending = trendingResult
             latest = latestResult
-            if (trending.isEmpty() && latest.isEmpty()) error = "Katalog belum mengembalikan judul yang cocok."
-        } catch (_: Exception) {
-            error = "Katalog gagal dimuat. Periksa koneksi dan coba lagi."
+            emptyCatalogue = trending.isEmpty() && latest.isEmpty()
+        } catch (failure: Exception) {
+            if (failure is kotlinx.coroutines.CancellationException) throw failure
+            error = failure.message ?: "Katalog gagal dimuat. Periksa koneksi lalu coba lagi."
         } finally {
             loading = false
         }
@@ -225,15 +229,10 @@ private fun HomeScreen(
                 modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 12.dp, top = 16.dp, bottom = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(
-                    Modifier.size(42.dp).clip(RoundedCornerShape(13.dp))
-                        .background(Brush.linearGradient(listOf(Accent, Color(0xFF6488FF)))),
-                    contentAlignment = Alignment.Center
-                ) { Icon(Icons.Default.MenuBook, null, tint = Bg, modifier = Modifier.size(25.dp)) }
-                Spacer(Modifier.width(11.dp))
+                BrandMark(44)
+                Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("ManhwaKu", color = Ink, fontSize = 21.sp, fontWeight = FontWeight.Black)
-                    Text("Temukan bacaan berikutnya", color = Muted, fontSize = 10.sp)
+                    Text("ManhwaKu", color = Ink, fontSize = 22.sp, fontWeight = FontWeight.Black)
                 }
                 IconButton(onClick = onSearch) { Icon(Icons.Default.Search, "Cari", tint = Ink) }
                 IconButton(onClick = { showAbout = true }) { Icon(Icons.Default.Info, "Tentang", tint = Muted) }
@@ -265,6 +264,12 @@ private fun HomeScreen(
             item { LoadingState("Memuat katalog…") }
         } else if (error.isNotBlank() && trending.isEmpty() && latest.isEmpty()) {
             item { ErrorState(error, "Coba lagi") { scope.launch { load() } } }
+        } else if (emptyCatalogue) {
+            item {
+                EmptyState("Katalog belum tersedia", "Coba muat ulang beberapa saat lagi.", "Muat ulang") {
+                    scope.launch { load() }
+                }
+            }
         } else {
             if (trending.isNotEmpty()) {
                 item { SectionTitle("Sedang populer", "Jelajahi", onExplore) }
@@ -276,18 +281,39 @@ private fun HomeScreen(
             }
             if (trending.isNotEmpty()) {
                 item { SectionTitle("Pilihan lainnya", "Jelajahi", onExplore) }
-                item { HorizontalShelf(trending.drop(5).take(12), onOpen) }
+                item { HorizontalShelf(trending.drop(8).take(12), onOpen) }
             }
             if (error.isNotBlank()) {
                 item { Text(error, color = Muted, fontSize = 11.sp, modifier = Modifier.padding(18.dp)) }
             }
         }
-        item {
+    }
+}
+
+@Composable
+private fun BrandMark(size: Int) {
+    Box(
+        Modifier.size(size.dp)
+            .clip(RoundedCornerShape((size * 0.30f).dp))
+            .background(
+                Brush.linearGradient(
+                    listOf(Color(0xFF6DDCFF), Color(0xFF718BFF), Color(0xFF9B78F2))
+                )
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            Modifier.fillMaxSize(0.78f)
+                .clip(RoundedCornerShape((size * 0.23f).dp))
+                .background(Color.White.copy(alpha = 0.18f)),
+            contentAlignment = Alignment.Center
+        ) {
             Text(
-                "Metadata: MangaBaka · Chapter: MangaDex · Konten dengan rating aman saja",
-                color = Muted,
-                fontSize = 9.sp,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 20.dp)
+                "M",
+                color = Color(0xFF091321),
+                fontSize = (size * 0.52f).sp,
+                fontWeight = FontWeight.Black,
+                letterSpacing = (-1.5).sp
             )
         }
     }
@@ -419,9 +445,10 @@ private fun CatalogScreen(
                 items = if (reset) found else (items + found).distinctBy { normalizeTitle(it.title) }
                 page = nextPage
                 hasMore = found.size >= 24
-                if (found.isEmpty() && reset) error = "Tidak ada judul yang cocok dalam katalog aman."
-            } catch (_: Exception) {
-                error = "Pencarian gagal. Periksa koneksi lalu coba lagi."
+                if (found.isEmpty() && reset) error = ""
+            } catch (failure: Exception) {
+                if (failure is kotlinx.coroutines.CancellationException) throw failure
+                error = failure.message ?: "Pencarian gagal. Periksa koneksi lalu coba lagi."
             } finally {
                 loading = false
                 loadingMore = false
@@ -461,8 +488,25 @@ private fun CatalogScreen(
                     colors = ButtonDefaults.buttonColors(containerColor = Accent),
                     shape = RoundedCornerShape(13.dp),
                     contentPadding = PaddingValues(horizontal = 13.dp, vertical = 14.dp)
-                ) { Text("Cari", color = Bg, fontWeight = FontWeight.Black) }
+                ) {
+                    if (loading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(17.dp),
+                            color = Bg,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text("Cari", color = Bg, fontWeight = FontWeight.Black)
+                    }
+                }
             }
+        }
+        if (loading) {
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(2.dp),
+                color = Accent,
+                trackColor = Panel2
+            )
         }
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 10.dp),
@@ -493,7 +537,7 @@ private fun CatalogScreen(
             Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(if (items.isEmpty()) "Katalog" else "${items.size} judul",
+            Text(if (items.isEmpty()) "Hasil pencarian" else "${items.size} judul",
                 color = Muted, fontSize = 10.sp, modifier = Modifier.weight(1f))
             IconButton(onClick = { load(true) }) { Icon(Icons.Default.Refresh, "Muat ulang", tint = Muted) }
         }
@@ -502,7 +546,7 @@ private fun CatalogScreen(
             !searched -> EmptyState("Temukan cerita", "Cari berdasarkan judul atau pilih jenis komik.", null) {}
             loading && items.isEmpty() -> LoadingState("Mencari judul…")
             error.isNotBlank() && items.isEmpty() -> ErrorState(error, "Coba lagi") { load(true) }
-            items.isEmpty() -> EmptyState("Belum ada hasil", error.ifBlank { "Coba kata kunci atau jenis yang berbeda." }, "Muat ulang") { load(true) }
+            items.isEmpty() -> EmptyState("Tidak ditemukan", "Coba judul atau kategori lain.", "Cari lagi") { load(true) }
             else -> {
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(3),
@@ -664,6 +708,8 @@ private fun DetailScreen(
     var menuStatus by remember { mutableStateOf(false) }
     var loadingMeta by remember(initial.id) { mutableStateOf(false) }
     var loadingMatch by remember(initial.id) { mutableStateOf(true) }
+    var matchError by remember(initial.id) { mutableStateOf("") }
+    var matchRefresh by remember(initial.id) { mutableIntStateOf(0) }
     var mangaDexId by remember(initial.id) { mutableStateOf<String?>(initial.mangaDexId) }
     var availableChapterLanguages by remember(initial.id) { mutableStateOf(listOf("id", "en")) }
     var chapters by remember(initial.id) { mutableStateOf<List<Chapter>>(emptyList()) }
@@ -689,25 +735,33 @@ private fun DetailScreen(
         publisherUrl = extra.publisherUrl.ifBlank { base.publisherUrl }
     )
 
-    LaunchedEffect(initial.id, initial.title) {
+    LaunchedEffect(initial.id, initial.title, matchRefresh) {
         loadingMeta = true
         loadingMatch = true
-        val full = repository.fullMetadata(initial)
-        if (full != null) item = mergeMetadata(item, full)
-        val freshMatch = repository.matchMangaDex(initial.copy(title = canonicalTitle(initial.title)))
-        mangaDexId = freshMatch?.mangaDexId
-        if (freshMatch != null) {
-            availableChapterLanguages = (listOf("id", "en") + freshMatch.availableLanguages).distinct()
-            item = item.copy(
-                title = if (item.title.contains("pre-serialization", true)) freshMatch.title else item.title,
-                cover = freshMatch.cover.ifBlank { item.cover },
-                coverLarge = freshMatch.coverLarge.ifBlank { item.coverLarge },
-                description = item.description.ifBlank { freshMatch.description },
-                author = item.author.ifBlank { freshMatch.author }
-            )
+        matchError = ""
+        try {
+            val full = repository.fullMetadata(initial)
+            if (full != null) item = mergeMetadata(item, full)
+            val freshMatch = repository.matchMangaDex(initial.copy(title = canonicalTitle(initial.title)))
+            mangaDexId = freshMatch?.mangaDexId
+            if (freshMatch != null) {
+                availableChapterLanguages = (listOf("id", "en") + freshMatch.availableLanguages).distinct()
+                item = item.copy(
+                    title = if (item.title.contains("pre-serialization", true)) freshMatch.title else item.title,
+                    cover = freshMatch.cover.ifBlank { item.cover },
+                    coverLarge = freshMatch.coverLarge.ifBlank { item.coverLarge },
+                    description = item.description.ifBlank { freshMatch.description },
+                    author = item.author.ifBlank { freshMatch.author }
+                )
+            }
+        } catch (failure: Exception) {
+            if (failure is kotlinx.coroutines.CancellationException) throw failure
+            mangaDexId = null
+            matchError = failure.message ?: "Pencocokan sumber chapter gagal."
+        } finally {
+            loadingMeta = false
+            loadingMatch = false
         }
-        loadingMeta = false
-        loadingMatch = false
     }
 
     fun applyChapterPage(result: com.manhwaku.reader.data.ChapterPage) {
@@ -755,7 +809,7 @@ private fun DetailScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Kembali", tint = Ink) }
-            Text(item.title, color = Ink, fontSize = 15.sp, fontWeight = FontWeight.Bold,
+            Text("Detail komik", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.Bold,
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             IconButton(onClick = ::toggleFavorite) {
                 Icon(if (saved) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
@@ -839,8 +893,8 @@ private fun DetailScreen(
             ) {
                 item { Text("Sinopsis", color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Black) }
                 item {
-                    Text(item.description.ifBlank { "Sinopsis belum tersedia." },
-                        color = Color(0xFFD2D9E4), fontSize = 12.sp, lineHeight = 18.sp,
+                    Text(cleanSynopsis(item.description).ifBlank { "Sinopsis belum tersedia." },
+                        color = Color(0xFFE0E6F1), fontSize = 13.sp, lineHeight = 20.sp,
                         modifier = Modifier.padding(top = 9.dp))
                 }
                 if (loadingMeta) item {
@@ -854,7 +908,6 @@ private fun DetailScreen(
                 item { InfoLine("Status", statusLabel(item.status)) }
                 if (item.author.isNotBlank()) item { InfoLine("Kreator", item.author) }
                 if (item.language != "unknown") item { InfoLine("Bahasa asli", item.language.uppercase()) }
-                item { InfoLine("Metadata", item.source) }
                 if (item.publisherUrl.isNotBlank()) item {
                     OutlinedButton(
                         onClick = { runCatching { uriHandler.openUri(item.publisherUrl) } },
@@ -866,12 +919,6 @@ private fun DetailScreen(
                         Spacer(Modifier.width(7.dp))
                         Text("Buka halaman penerbit resmi")
                     }
-                }
-                item {
-                    Text(
-                        "Metadata dari MangaBaka. Ketersediaan chapter bergantung pada bahasa dan sumber yang terhubung.",
-                        color = Muted, fontSize = 9.sp, lineHeight = 13.sp, modifier = Modifier.padding(top = 20.dp)
-                    )
                 }
             }
         } else {
@@ -905,6 +952,10 @@ private fun DetailScreen(
                     IconButton(onClick = {
                         scope.launch {
                             if (chaptersLoading) return@launch
+                            if (mangaDexId == null) {
+                                matchRefresh += 1
+                                return@launch
+                            }
                             if (selectedLanguage != "all") autoFallback = false
                             chaptersLoading = true
                             chaptersError = ""
@@ -933,13 +984,16 @@ private fun DetailScreen(
                 }
 
                 when {
-                    loadingMatch || chaptersLoading && chapters.isEmpty() -> LoadingState("Memuat daftar chapter…")
+                    loadingMatch || chaptersLoading && chapters.isEmpty() -> LoadingState("Mencari sumber chapter…")
+                    matchError.isNotBlank() -> ErrorState(matchError, "Coba lagi") {
+                        matchRefresh += 1
+                    }
                     mangaDexId == null -> EmptyState(
-                        "Sumber chapter belum terhubung",
-                        "Judul tersedia di katalog, tetapi feed chapter belum ditemukan pada sumber yang terhubung.",
-                        if (item.publisherUrl.isNotBlank()) "Buka penerbit" else null
+                        "Belum ada padanan chapter",
+                        "Judul ini belum memiliki pasangan yang cocok di sumber chapter terhubung.",
+                        "Coba cocokkan lagi"
                     ) {
-                        if (item.publisherUrl.isNotBlank()) runCatching { uriHandler.openUri(item.publisherUrl) }
+                        matchRefresh += 1
                     }
                     chaptersError.isNotBlank() && chapters.isEmpty() -> ErrorState(chaptersError, "Coba lagi") {
                         scope.launch {
@@ -1181,11 +1235,25 @@ private fun InfoLine(label: String, value: String) {
 
 @Composable
 private fun LoadingState(message: String) {
-    Box(Modifier.fillMaxWidth().padding(26.dp), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            CircularProgressIndicator(color = Accent, strokeWidth = 2.dp, modifier = Modifier.size(25.dp))
+    Box(
+        Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 22.dp)
+            .heightIn(min = 210.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            Modifier.fillMaxWidth()
+                .clip(RoundedCornerShape(24.dp))
+                .background(
+                    Brush.linearGradient(listOf(Panel2.copy(alpha = 0.92f), Panel.copy(alpha = 0.96f)))
+                )
+                .padding(vertical = 28.dp, horizontal = 22.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            BrandMark(58)
+            Spacer(Modifier.height(18.dp))
+            CircularProgressIndicator(color = Accent, strokeWidth = 2.5.dp, modifier = Modifier.size(24.dp))
             Spacer(Modifier.height(12.dp))
-            Text(message, color = Muted, fontSize = 11.sp)
+            Text(message, color = Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }
@@ -1194,9 +1262,7 @@ private fun LoadingState(message: String) {
 private fun EmptyState(title: String, message: String, action: String?, onAction: () -> Unit) {
     Box(Modifier.fillMaxWidth().padding(20.dp).heightIn(min = 210.dp), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(Modifier.size(64.dp).clip(RoundedCornerShape(20.dp)).background(Panel), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.MenuBook, null, tint = Accent, modifier = Modifier.size(31.dp))
-            }
+            BrandMark(62)
             Spacer(Modifier.height(15.dp))
             Text(title, color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Black)
             Spacer(Modifier.height(7.dp))
@@ -1216,7 +1282,7 @@ private fun EmptyState(title: String, message: String, action: String?, onAction
 
 @Composable
 private fun ErrorState(message: String, action: String, onAction: () -> Unit) {
-    EmptyState("Terjadi kendala", message, action, onAction)
+    EmptyState("Sumber sedang bermasalah", message, action, onAction)
 }
 
 private fun typeLabel(value: String): String = when (value.lowercase()) {

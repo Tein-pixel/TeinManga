@@ -208,6 +208,17 @@ fun JSONArray?.toStringList(): List<String> {
     }.filter { it.isNotBlank() && it != "null" }
 }
 
+fun cleanSynopsis(input: String): String {
+    if (input.isBlank()) return ""
+    return input
+        .replace(Regex("""\[([^\]]+)]\((?:https?://[^)]+)\)""")) { it.groupValues[1] }
+        .replace(Regex("""\*\*(.*?)\*\*""")) { it.groupValues[1] }
+        .replace(Regex("""(?m)^\s{0,3}#{1,6}\s*"""), "")
+        .replace(Regex("""(?m)^\s*[-*]\s+"""), "• ")
+        .replace(Regex("""\n{3,}"""), "\n\n")
+        .trim()
+}
+
 fun normalizeTitle(input: String): String =
     canonicalTitle(input).lowercase(Locale.ROOT).replace(Regex("[^a-z0-9]"), "")
 
