@@ -1918,7 +1918,7 @@ class _DiscoveryTabState extends State<DiscoveryTab> {
           if (seen.add(item.id)) _items.add(item);
         }
         _page = nextPage;
-        _hasMore = results.length >= CatalogApi.pageSize;
+        _hasMore = results.isNotEmpty;
         _loading = false;
         _loadingMore = false;
       });
@@ -2094,7 +2094,7 @@ class _SearchTabState extends State<SearchTab> {
           if (seen.add(item.id)) _items.add(item);
         }
         _page = nextPage;
-        _hasMore = results.length >= CatalogApi.pageSize;
+        _hasMore = results.isNotEmpty;
         _loading = false;
         _loadingMore = false;
       });
