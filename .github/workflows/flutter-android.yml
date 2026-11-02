@@ -30,7 +30,16 @@ jobs:
           if ! grep -q 'android.permission.INTERNET' "$MANIFEST"; then
             sed -i '/<manifest/a\    <uses-permission android:name="android.permission.INTERNET" />' "$MANIFEST"
           fi
+          GRADLE_FILE="android/app/build.gradle.kts"
+          if grep -q 'minSdk = flutter.minSdkVersion' "$GRADLE_FILE"; then
+            sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 29/' "$GRADLE_FILE"
+          else
+            echo "Unable to enforce Android 10 (minSdk 29) in generated Gradle file."
+            grep -n 'minSdk\|defaultConfig' "$GRADLE_FILE" || true
+            exit 1
+          fi
           grep -n 'manifest\|android.permission.INTERNET\|android:label' "$MANIFEST"
+          grep -n 'applicationId\|minSdk\|targetSdk' "$GRADLE_FILE"
       - name: Resolve dependencies
         run: flutter pub get
       - name: Analyze Dart code
@@ -42,7 +51,7 @@ jobs:
       - name: Upload release APKs
         uses: actions/upload-artifact@v4
         with:
-          name: ManhwaKu-v2.9.0-android-arm-apks
+          name: ManhwaKu-v2.9.1-android-arm-apks
           path: |
             flutter_app/build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
             flutter_app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
