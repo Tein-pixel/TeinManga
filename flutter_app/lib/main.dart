@@ -173,6 +173,7 @@ class SeriesItem {
         ? _firstText([entry['name'], entry['title']])
         : entry.toString()).where((name) => name.trim().isNotEmpty).take(2).join(', ');
     final ratingValue = json['rating'];
+    final hasRestrictedTags = _hasRestrictedTags(json['tags']);
 
     return SeriesItem(
       id: _toInt(json['id']),
@@ -198,7 +199,7 @@ class SeriesItem {
       rating: ratingValue is num ? ratingValue.toDouble() : null,
       author: authorNames,
       language: language,
-      contentRating: _firstText([json['content_rating'], 'safe']),
+      contentRating: hasRestrictedTags ? 'blocked' : _firstText([json['content_rating'], 'safe']),
       source: 'MangaBaka',
     );
   }
@@ -282,6 +283,7 @@ class SeriesItem {
     final id = _firstText([json['id']]);
     final cover = coverFile.isEmpty ? '' :
         'https://uploads.mangadex.org/covers/$id/$coverFile.256.jpg';
+    final hasRestrictedTags = _hasRestrictedTags(attributes['tags']);
     final availableLanguages = attributes['availableTranslatedLanguages'] is List
         ? (attributes['availableTranslatedLanguages'] as List)
             .whereType<String>()
@@ -316,7 +318,7 @@ class SeriesItem {
       rating: null,
       author: authors.take(2).join(', '),
       language: language,
-      contentRating: attributes['contentRating']?.toString() ?? 'safe',
+      contentRating: hasRestrictedTags ? 'blocked' : (attributes['contentRating']?.toString() ?? 'safe'),
       source: 'MangaDex',
       availableTranslatedLanguages: availableLanguages,
     );
@@ -382,13 +384,36 @@ int _stableId(String value) {
 
 bool _hasRestrictedTags(dynamic raw) {
   if (raw is! List) return false;
-  const blocked = {'ecchi', 'hentai', 'erotica', 'adult', 'mature'};
+  const blocked = {
+    'ecchi', 'hentai', 'erotica', 'adult', 'mature',
+    'gore', 'graphic violence', 'sexual violence', 'sexual abuse',
+  };
+
+  String normalize(dynamic value) {
+    if (value is Map) {
+      return value.values.map((entry) => entry.toString().toLowerCase()).join(' ');
+    }
+    return value?.toString().toLowerCase() ?? '';
+  }
+
   for (final item in raw) {
     if (item is Map) {
-      final name = _firstText([item['name'], item['title'], item['tag']]).toLowerCase();
-      if (blocked.contains(name)) return true;
-    } else if (blocked.contains(item.toString().toLowerCase())) {
-      return true;
+      final attributes = item['attributes'] is Map
+          ? Map<String, dynamic>.from(item['attributes'] as Map)
+          : <String, dynamic>{};
+      final name = normalize(
+        attributes['name'] ?? item['name'] ?? item['title'] ?? item['tag'],
+      );
+      final rating = _firstText([
+        attributes['contentRating'],
+        item['content_rating'],
+        item['contentRating'],
+      ]).toLowerCase();
+      if (const {'suggestive', 'erotica', 'pornographic'}.contains(rating)) return true;
+      if (blocked.any(name.contains)) return true;
+    } else {
+      final name = normalize(item);
+      if (blocked.any(name.contains)) return true;
     }
   }
   return false;
@@ -1579,13 +1604,13 @@ class _HomeTabState extends State<HomeTab> {
     _reload();
   }
 
-  void _reload() {
-    _trending = CatalogApi.fetch(sortBy: 'trending_7d');
-    _latest = CatalogApi.fetch(sortBy: 'latest');
+  void _reload({bool forceRefresh = false}) {
+    _trending = CatalogApi.fetch(sortBy: 'trending_7d', forceRefresh: forceRefresh);
+    _latest = CatalogApi.fetch(sortBy: 'latest', forceRefresh: forceRefresh);
   }
 
   Future<void> _refresh() async {
-    setState(_reload);
+    setState(() => _reload(forceRefresh: true));
     try {
       await Future.wait([_trending, _latest]);
     } catch (_) {}
@@ -1652,7 +1677,7 @@ class _HomeTabState extends State<HomeTab> {
                 if (snapshot.hasError) {
                   return ErrorPanel(
                     message: 'Katalog belum dapat dimuat. Periksa koneksi lalu coba lagi.',
-                    onRetry: () => setState(_reload),
+                    onRetry: () => setState(() => _reload(forceRefresh: true)),
                   );
                 }
                 if (!snapshot.hasData) {
@@ -2095,7 +2120,7 @@ class _DiscoveryTabState extends State<DiscoveryTab> {
     _load(reset: true);
   }
 
-  Future<void> _load({bool reset = false}) async {
+  Future<void> _load({bool reset = false, bool forceRefresh = false}) async {
     if (!reset && (_loading || _loadingMore || !_hasMore)) return;
     final request = ++_requestId;
     final nextPage = reset ? 1 : _page + 1;
@@ -2118,6 +2143,7 @@ class _DiscoveryTabState extends State<DiscoveryTab> {
         types: _filters[_selected]!,
         sortBy: 'trending_7d',
         page: nextPage,
+        forceRefresh: forceRefresh,
       );
       if (!mounted || request != _requestId) return;
 
@@ -2149,7 +2175,7 @@ class _DiscoveryTabState extends State<DiscoveryTab> {
             child: Row(
               children: [
                 const Expanded(child: Text('Jelajahi', style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900))),
-                IconButton(onPressed: () => _load(reset: true), icon: const Icon(Icons.refresh_rounded)),
+                IconButton(onPressed: () => _load(reset: true, forceRefresh: true), icon: const Icon(Icons.refresh_rounded)),
               ],
             ),
           ),
