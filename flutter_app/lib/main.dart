@@ -634,7 +634,10 @@ class RespectfulHttp {
 
       final rawRetryAfter = response.headers['retry-after'];
       final retryAfter = int.tryParse(rawRetryAfter ?? '');
-      if (retryAfter != null && (retryAfter < 0 || retryAfter > 3)) {
+      // MangaBaka documents Retry-After: 10 for 429 responses.
+      // Honor useful server guidance instead of retrying too early; avoid
+      // holding the UI for an excessive server-supplied delay.
+      if (retryAfter != null && (retryAfter < 0 || retryAfter > 30)) {
         return response;
       }
       if (rawRetryAfter != null && retryAfter == null) {
