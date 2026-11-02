@@ -17,7 +17,7 @@ void main() {
     expect(find.text('CARI'), findsOneWidget);
     expect(find.text('KOLEKSI'), findsOneWidget);
     expect(find.text('RIWAYAT'), findsOneWidget);
-    expect(find.text('MULTI-SOURCE CATALOG'), findsOneWidget);
+    expect(find.text('Baru diperbarui'), findsOneWidget);
     expect(find.text('WEBTOON ORIGINAL'), findsNothing);
   });
 
