@@ -3,6 +3,7 @@ package com.manhwaku.reader.data
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -62,6 +63,66 @@ class NativeModelTest {
         assertNull(Series.fromMangaBaka(mangaBakaRecord("unknown")))
         assertNull(Series.fromMangaBaka(mangaBakaRecord("suggestive")))
     }
+
+    @Test
+    fun chapterPaginationAdvancesByRawRowsNotOnlyValidChapters() {
+        val response = JSONObject()
+            .put("total", 105)
+            .put(
+                "data",
+                JSONArray()
+                    .put(chapterRecord("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", pages = 18))
+                    .put(chapterRecord("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", pages = 0))
+                    .put(chapterRecord("cccccccc-cccc-4ccc-8ccc-cccccccccccc", pages = 22, rating = "mature"))
+            )
+
+        val page = ManhwaRepository().parseChapterFeedResponse(response, offset = 100)
+
+        assertEquals(1, page.chapters.size)
+        assertEquals(103, page.nextOffset)
+        assertTrue(page.hasMore)
+        assertEquals("id", page.chapters.single().language)
+    }
+
+    @Test
+    fun chapterPaginationStopsAtServerTotalAndOnEmptyPage() {
+        val finalPage = JSONObject()
+            .put("total", 101)
+            .put("data", JSONArray().put(chapterRecord("dddddddd-dddd-4ddd-8ddd-dddddddddddd", pages = 15)))
+
+        val parsedFinal = ManhwaRepository().parseChapterFeedResponse(finalPage, offset = 100)
+        assertEquals(101, parsedFinal.nextOffset)
+        assertFalse(parsedFinal.hasMore)
+
+        val empty = JSONObject().put("total", 105).put("data", JSONArray())
+        val parsedEmpty = ManhwaRepository().parseChapterFeedResponse(empty, offset = 101)
+        assertEquals(101, parsedEmpty.nextOffset)
+        assertFalse(parsedEmpty.hasMore)
+    }
+
+    private fun chapterRecord(
+        id: String,
+        pages: Int,
+        rating: String = "safe"
+    ) = JSONObject()
+        .put("id", id)
+        .put(
+            "attributes",
+            JSONObject()
+                .put("chapter", "12")
+                .put("title", "Chapter test")
+                .put("translatedLanguage", "id")
+                .put("pages", pages)
+                .put("contentRating", rating)
+        )
+        .put(
+            "relationships",
+            JSONArray().put(
+                JSONObject()
+                    .put("type", "scanlation_group")
+                    .put("attributes", JSONObject().put("name", "Test Group"))
+            )
+        )
 
     private fun mangaDexRecord(
         contentRating: String = "safe",
