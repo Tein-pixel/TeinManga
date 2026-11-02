@@ -370,7 +370,17 @@ private fun CatalogScreen(
     var searched by remember { mutableStateOf(!isSearch) }
     val scope = rememberCoroutineScope()
 
-    val types = listOf("Semua" to "all", "Manhwa" to "manhwa", "Manga" to "manga", "Manhua" to "manhua")
+    val types = listOf(
+        "Semua" to "all",
+        "Manga" to "manga",
+        "Manhwa" to "manhwa",
+        "Manhua" to "manhua",
+        "Novel" to "novel",
+        "Light Novel" to "lightnovel",
+        "Webtoon" to "webtoon",
+        "OEL" to "oel",
+        "Lainnya" to "other"
+    )
 
     fun load(reset: Boolean, q: String = query, type: String = selectedType) {
         if (loading || loadingMore) return
@@ -1158,6 +1168,7 @@ private fun typeLabel(value: String): String = when (value.lowercase()) {
     "manhwa" -> "Manhwa"
     "manhua" -> "Manhua"
     "novel" -> "Novel"
+    "lightnovel" -> "Light Novel"
     "oel" -> "Komik original"
     "webtoon" -> "Webtoon"
     else -> "Komik"
