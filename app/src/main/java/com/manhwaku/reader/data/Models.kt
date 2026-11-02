@@ -185,6 +185,18 @@ data class Chapter(
     val group: String
 )
 
+/**
+ * A MangaDex feed page. nextOffset counts raw API rows, not only rows kept
+ * after local validation, so filtered chapter rows cannot cause duplicates
+ * or skipped records during pagination.
+ */
+data class ChapterPage(
+    val chapters: List<Chapter>,
+    val nextOffset: Int,
+    val hasMore: Boolean,
+    val usedFallback: Boolean = false
+)
+
 fun JSONArray?.toStringList(): List<String> {
     if (this == null) return emptyList()
     return (0 until length()).mapNotNull { index ->
