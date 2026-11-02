@@ -4,8 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
-import 'package:webview_flutter/webview_flutter.dart';
 
 const Color bg = Color(0xFF101010);
 const Color panel = Color(0xFF1A1A1A);
@@ -61,43 +59,6 @@ class ManhwaKuApp extends StatelessWidget {
 }
 
 
-class WebtoonPick {
-  const WebtoonPick({
-    required this.title,
-    required this.genre,
-    required this.ageRating,
-    required this.creator,
-    required this.url,
-    required this.coverUrl,
-  });
-
-  final String title;
-  final String genre;
-  final String ageRating;
-  final String creator;
-  final String url;
-  final String coverUrl;
-}
-
-const officialWebtoonPicks = <WebtoonPick>[
-  WebtoonPick(
-    title: 'LOOKISM',
-    genre: 'Aksi',
-    ageRating: '16+',
-    creator: 'Taejoon Park',
-    url: 'https://m.webtoons.com/id/action/lookism/list?title_no=532',
-    coverUrl: 'https://webtoon-phinf.pstatic.net/20231116_134/1700108772436oh00c_JPEG/532.jpg?type=q70',
-  ),
-  WebtoonPick(
-    title: 'Eleceed',
-    genre: 'Fantasi',
-    ageRating: '13+',
-    creator: 'ZHENA • Jeho Son',
-    url: 'https://m.webtoons.com/id/fantasy/eleceed/list?title_no=2034',
-    coverUrl: 'https://webtoon-phinf.pstatic.net/20231116_148/1700108786426s2R7i_JPEG/2034.jpg?type=q70',
-  ),
-];
-
 class SeriesItem {
   const SeriesItem({
     required this.id,
@@ -111,6 +72,7 @@ class SeriesItem {
     required this.author,
     required this.language,
     required this.contentRating,
+    this.source = 'MangaBaka',
   });
 
   final int id;
@@ -124,6 +86,7 @@ class SeriesItem {
   final String author;
   final String language;
   final String contentRating;
+  final String source;
 
   factory SeriesItem.fromJson(Map<String, dynamic> json) {
     final coverData = json['cover'] is Map
@@ -164,6 +127,112 @@ class SeriesItem {
       author: authors.map((e) => e.toString()).where((e) => e.isNotEmpty).take(2).join(', '),
       language: _firstText([json['original_language'], 'unknown']),
       contentRating: _firstText([json['content_rating'], 'safe']),
+      source: 'MangaBaka',
+    );
+  }
+
+
+  factory SeriesItem.fromJikan(Map<String, dynamic> json) {
+    final authors = json['authors'] is List ? json['authors'] as List : const [];
+    final images = json['images'] is Map
+        ? Map<String, dynamic>.from(json['images'] as Map)
+        : <String, dynamic>{};
+    final webp = images['webp'] is Map
+        ? Map<String, dynamic>.from(images['webp'] as Map)
+        : <String, dynamic>{};
+    final jpg = images['jpg'] is Map
+        ? Map<String, dynamic>.from(images['jpg'] as Map)
+        : <String, dynamic>{};
+    final score = json['score'];
+    final type = _firstText([json['type'], 'manga']).toLowerCase();
+    return SeriesItem(
+      id: 1000000000 + _toInt(json['mal_id']),
+      title: _firstText([json['title'], json['title_english'], 'Tanpa judul']),
+      type: type,
+      url: _firstText([json['url'], 'https://myanimelist.net/']),
+      cover: _firstText([
+        webp['large_image_url'],
+        webp['image_url'],
+        jpg['large_image_url'],
+        jpg['image_url'],
+      ]),
+      description: _firstText([json['synopsis'], 'Deskripsi belum tersedia.']),
+      status: _firstText([json['status'], 'unknown']),
+      rating: score is num ? score.toDouble() * 10 : null,
+      author: authors
+          .whereType<Map>()
+          .map((author) => _firstText([author['name']]))
+          .where((name) => name.isNotEmpty)
+          .take(2)
+          .join(', '),
+      language: 'ja',
+      contentRating: 'safe',
+      source: 'Jikan / MyAnimeList',
+    );
+  }
+
+  factory SeriesItem.fromMangaDex(Map<String, dynamic> json) {
+    final attributes = json['attributes'] is Map
+        ? Map<String, dynamic>.from(json['attributes'] as Map)
+        : <String, dynamic>{};
+    final relationships =
+        json['relationships'] is List ? json['relationships'] as List : const [];
+    final titles = attributes['title'] is Map
+        ? Map<String, dynamic>.from(attributes['title'] as Map)
+        : <String, dynamic>{};
+    final description = attributes['description'] is Map
+        ? Map<String, dynamic>.from(attributes['description'] as Map)
+        : <String, dynamic>{};
+    final language = _firstText([attributes['originalLanguage'], 'unknown']);
+    final type = language == 'ko'
+        ? 'manhwa'
+        : language == 'zh' || language == 'zh-hk' || language == 'zh-mo'
+            ? 'manhua'
+            : language == 'ja'
+                ? 'manga'
+                : 'other';
+    String coverFile = '';
+    final authors = <String>[];
+    for (final relation in relationships.whereType<Map>()) {
+      final relationType = relation['type']?.toString();
+      final relationAttributes = relation['attributes'] is Map
+          ? Map<String, dynamic>.from(relation['attributes'] as Map)
+          : <String, dynamic>{};
+      if (relationType == 'cover_art') {
+        coverFile = _firstText([relationAttributes['fileName']]);
+      } else if (relationType == 'author') {
+        final name = _firstText([relationAttributes['name']]);
+        if (name.isNotEmpty) authors.add(name);
+      }
+    }
+    final id = _firstText([json['id']]);
+    final cover = coverFile.isEmpty
+        ? ''
+        : 'https://uploads.mangadex.org/covers/$id/$coverFile.256.jpg';
+    final rating = attributes['contentRating']?.toString() ?? 'safe';
+    return SeriesItem(
+      id: _stableId('mangadex:$id'),
+      title: _firstText([
+        titles['en'],
+        titles['ja-ro'],
+        titles['ja'],
+        titles.values.isEmpty ? '' : titles.values.first,
+        'Tanpa judul',
+      ]),
+      type: type,
+      url: id.isEmpty ? 'https://mangadex.org/' : 'https://mangadex.org/title/$id',
+      cover: cover,
+      description: _firstText([
+        description['en'],
+        description['id'],
+        'Deskripsi belum tersedia.',
+      ]),
+      status: _firstText([attributes['status'], 'unknown']),
+      rating: null,
+      author: authors.take(2).join(', '),
+      language: language,
+      contentRating: rating,
+      source: 'MangaDex',
     );
   }
 
@@ -179,6 +248,7 @@ class SeriesItem {
         author: _firstText([json['author']]),
         language: _firstText([json['language']]),
         contentRating: _firstText([json['contentRating'], 'safe']),
+        source: _firstText([json['source'], 'MangaBaka']),
       );
 
   Map<String, dynamic> toMap() => {
@@ -193,6 +263,7 @@ class SeriesItem {
         'author': author,
         'language': language,
         'contentRating': contentRating,
+        'source': source,
       };
 }
 
@@ -211,6 +282,29 @@ int _toInt(dynamic value) {
   return int.tryParse(value?.toString() ?? '') ?? 0;
 }
 
+int _stableId(String value) {
+  var hash = 5381;
+  for (final unit in value.codeUnits) {
+    hash = ((hash << 5) + hash) ^ unit;
+    hash &= 0x3fffffff;
+  }
+  return 1500000000 + hash;
+}
+
+bool _hasRestrictedTags(dynamic raw) {
+  if (raw is! List) return false;
+  const blocked = {'ecchi', 'hentai', 'erotica', 'adult', 'mature'};
+  for (final item in raw) {
+    if (item is Map) {
+      final name = _firstText([item['name'], item['title'], item['tag']]).toLowerCase();
+      if (blocked.contains(name)) return true;
+    } else if (blocked.contains(item.toString().toLowerCase())) {
+      return true;
+    }
+  }
+  return false;
+}
+
 String typeLabel(String value) {
   switch (value.toLowerCase()) {
     case 'manga':
@@ -223,6 +317,10 @@ String typeLabel(String value) {
       return 'Novel';
     case 'oel':
       return 'Komik original';
+    case 'lightnovel':
+      return 'Light Novel';
+    case 'webtoon':
+      return 'Webtoon';
     default:
       return 'Komik';
   }
@@ -245,9 +343,35 @@ String statusLabel(String value) {
   }
 }
 
+class _CatalogCacheEntry {
+  const _CatalogCacheEntry(this.items, this.savedAt);
+  final List<SeriesItem> items;
+  final DateTime savedAt;
+}
+
 class CatalogApi {
   static final http.Client _client = http.Client();
-  static const int pageSize = 25;
+  static const int pageSize = 24;
+  static const int _providerPageSize = 12;
+  static final Map<String, _CatalogCacheEntry> _cache = {};
+  static DateTime? _lastJikanRequest;
+  static Future<void> _jikanQueue = Future<void>.value();
+
+  static Future<void> _paceJikan() {
+    final next = _jikanQueue.then((_) async {
+      final last = _lastJikanRequest;
+      if (last != null) {
+        final elapsed = DateTime.now().difference(last);
+        const minimumGap = Duration(milliseconds: 450);
+        if (elapsed < minimumGap) {
+          await Future.delayed(minimumGap - elapsed);
+        }
+      }
+      _lastJikanRequest = DateTime.now();
+    });
+    _jikanQueue = next;
+    return next;
+  }
 
   static Future<List<SeriesItem>> fetch({
     String? query,
@@ -255,55 +379,238 @@ class CatalogApi {
     String sortBy = 'trending_7d',
     int page = 1,
   }) async {
+    final cleanQuery = (query ?? '').trim();
+    final cacheKey = '\${cleanQuery.toLowerCase()}|\${types.join(",")}|\$sortBy|\$page';
+    final cached = _cache[cacheKey];
+    if (cached != null &&
+        DateTime.now().difference(cached.savedAt) < const Duration(minutes: 4)) {
+      return cached.items;
+    }
+
+    var successfulSources = 0;
+    Future<List<SeriesItem>> attempt(
+      Future<List<SeriesItem>> Function() request,
+    ) async {
+      try {
+        final result = await request();
+        successfulSources++;
+        return result;
+      } catch (_) {
+        return const <SeriesItem>[];
+      }
+    }
+
+    final batches = await Future.wait<List<SeriesItem>>([
+      attempt(() => _fetchMangaBaka(
+            query: cleanQuery,
+            types: types,
+            sortBy: sortBy,
+            page: page,
+          )),
+      attempt(() => _fetchMangaDex(
+            query: cleanQuery,
+            types: types,
+            sortBy: sortBy,
+            page: page,
+          )),
+      attempt(() => _fetchJikan(
+            query: cleanQuery,
+            types: types,
+            sortBy: sortBy,
+            page: page,
+          )),
+    ]);
+
+    if (successfulSources == 0) {
+      throw Exception('Semua sumber katalog sedang tidak merespons. Coba lagi nanti.');
+    }
+
+    final merged = <SeriesItem>[];
+    final seenIds = <int>{};
+    final seenTitles = <String>{};
+    for (final batch in batches) {
+      for (final item in batch) {
+        final normalized = item.title
+            .toLowerCase()
+            .replaceAll(RegExp(r'[^a-z0-9]'), '');
+        if (item.id <= 0 || item.title.isEmpty || item.contentRating != 'safe') {
+          continue;
+        }
+        if (seenIds.add(item.id) && seenTitles.add(normalized)) {
+          merged.add(item);
+        }
+      }
+    }
+
+    _cache[cacheKey] = _CatalogCacheEntry(
+      List<SeriesItem>.unmodifiable(merged),
+      DateTime.now(),
+    );
+    if (_cache.length > 80) _cache.remove(_cache.keys.first);
+    return merged;
+  }
+
+  static Future<List<SeriesItem>> _fetchMangaBaka({
+    required String query,
+    required List<String> types,
+    required String sortBy,
+    required int page,
+  }) async {
     final params = <String>[
       'content_rating=safe',
       'with_boosts=false',
-      'limit=' + pageSize.toString(),
-      'page=' + page.toString(),
-      'sort_by=' + Uri.encodeQueryComponent(sortBy),
+      'limit=$_providerPageSize',
+      'page=$page',
+      'sort_by=\${Uri.encodeQueryComponent(sortBy)}',
     ];
-    final cleanQuery = (query ?? '').trim();
-    if (cleanQuery.isNotEmpty) {
-      params.add('q=' + Uri.encodeQueryComponent(cleanQuery));
+    if (query.isNotEmpty) {
+      params.add('q=\${Uri.encodeQueryComponent(query)}');
     }
     for (final type in types) {
-      params.add('type=' + Uri.encodeQueryComponent(type));
+      params.add('type=\${Uri.encodeQueryComponent(type)}');
     }
-
     final uri = Uri.parse(
-      'https://api.mangabaka.org/v1/series/search?' + params.join('&'),
+      'https://api.mangabaka.org/v1/series/search?\${params.join('&')}',
     );
     final response = await _client
         .get(uri, headers: const {
           'Accept': 'application/json',
-          'User-Agent': 'ManhwaKu/2.3 Android',
+          'User-Agent': 'ManhwaKu/2.4 Android',
         })
-        .timeout(const Duration(seconds: 22));
-
+        .timeout(const Duration(seconds: 14));
     if (response.statusCode != 200) {
-      String message = 'Layanan katalog sedang bermasalah.';
-      try {
-        final data = jsonDecode(utf8.decode(response.bodyBytes));
-        if (data is Map && data['message'] != null) {
-          message = data['message'].toString();
-        }
-      } catch (_) {}
-      throw Exception(message + ' (' + response.statusCode.toString() + ')');
+      throw Exception('MangaBaka HTTP \${response.statusCode}');
     }
-
     final decoded = jsonDecode(utf8.decode(response.bodyBytes));
     if (decoded is! Map || decoded['data'] is! List) {
-      throw const FormatException('Format katalog tidak dikenali.');
+      throw const FormatException('Format MangaBaka tidak dikenali.');
     }
-
     return (decoded['data'] as List)
         .whereType<Map>()
         .map((row) => SeriesItem.fromJson(Map<String, dynamic>.from(row)))
-        .where((item) =>
-            item.id > 0 &&
-            item.title.isNotEmpty &&
-            item.contentRating == 'safe')
+        .where((item) => item.id > 0 && item.contentRating == 'safe')
         .toList();
+  }
+
+  static Future<List<SeriesItem>> _fetchMangaDex({
+    required String query,
+    required List<String> types,
+    required String sortBy,
+    required int page,
+  }) async {
+    final params = <String>[
+      'limit=$_providerPageSize',
+      'offset=\${(page - 1) * _providerPageSize}',
+      'contentRating%5B%5D=safe',
+      'includes%5B%5D=cover_art',
+      'includes%5B%5D=author',
+    ];
+    if (query.isNotEmpty) {
+      params.add('title=\${Uri.encodeQueryComponent(query)}');
+      params.add('order%5Brelevance%5D=desc');
+    } else if (sortBy == 'latest') {
+      params.add('order%5BlatestUploadedChapter%5D=desc');
+    } else {
+      params.add('order%5BfollowedCount%5D=desc');
+    }
+
+    final languages = <String>{};
+    if (types.isEmpty) {
+      languages.addAll({'ja', 'ko', 'zh'});
+    } else {
+      if (types.contains('manga')) languages.add('ja');
+      if (types.contains('manhwa')) languages.add('ko');
+      if (types.contains('manhua')) languages.add('zh');
+    }
+    for (final language in languages) {
+      params.add('originalLanguage%5B%5D=$language');
+    }
+    if (languages.isEmpty) return const <SeriesItem>[];
+
+    final uri = Uri.parse(
+      'https://api.mangadex.org/manga?\${params.join('&')}',
+    );
+    final response = await _client
+        .get(uri, headers: const {
+          'Accept': 'application/json',
+          'User-Agent': 'ManhwaKu/2.4 (Android; safe-catalog)',
+        })
+        .timeout(const Duration(seconds: 14));
+    if (response.statusCode != 200) {
+      throw Exception('MangaDex HTTP \${response.statusCode}');
+    }
+    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+    if (decoded is! Map || decoded['data'] is! List) {
+      throw const FormatException('Format MangaDex tidak dikenali.');
+    }
+    return (decoded['data'] as List)
+        .whereType<Map>()
+        .map((row) => SeriesItem.fromMangaDex(
+              Map<String, dynamic>.from(row),
+            ))
+        .where((item) => item.id > 0 && item.contentRating == 'safe')
+        .toList();
+  }
+
+  static Future<List<SeriesItem>> _fetchJikan({
+    required String query,
+    required List<String> types,
+    required String sortBy,
+    required int page,
+  }) async {
+    await _paceJikan();
+    const typeMap = <String, String>{
+      'manga': 'manga',
+      'manhwa': 'manhwa',
+      'manhua': 'manhua',
+      'novel': 'novel',
+      'lightnovel': 'lightnovel',
+      'oel': 'oel',
+      'webtoon': 'webtoon',
+    };
+    final selectedTypes = types
+        .map((value) => typeMap[value])
+        .whereType<String>()
+        .toList();
+    final path = query.isEmpty ? '/v4/top/manga' : '/v4/manga';
+    final params = <String, String>{
+      'limit': '$_providerPageSize',
+      'page': '$page',
+      'sfw': 'true',
+    };
+    if (query.isNotEmpty) {
+      params['q'] = query;
+    } else {
+      params['filter'] = sortBy == 'latest' ? 'publishing' : 'bypopularity';
+    }
+    if (selectedTypes.length == 1) {
+      params['type'] = selectedTypes.first;
+    }
+    final uri = Uri.https('api.jikan.moe', path, params);
+    final response = await _client
+        .get(uri, headers: const {
+          'Accept': 'application/json',
+          'User-Agent': 'ManhwaKu/2.4 (safe catalog client)',
+        })
+        .timeout(const Duration(seconds: 14));
+    if (response.statusCode != 200) {
+      throw Exception('Jikan HTTP \${response.statusCode}');
+    }
+    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+    if (decoded is! Map || decoded['data'] is! List) {
+      throw const FormatException('Format Jikan tidak dikenali.');
+    }
+    final items = <SeriesItem>[];
+    for (final row in (decoded['data'] as List).whereType<Map>()) {
+      final data = Map<String, dynamic>.from(row);
+      if (_hasRestrictedTags(data['genres']) ||
+          _hasRestrictedTags(data['themes']) ||
+          _hasRestrictedTags(data['demographics'])) {
+        continue;
+      }
+      items.add(SeriesItem.fromJikan(data));
+    }
+    return items;
   }
 }
 
@@ -565,75 +872,29 @@ class _HomeTabState extends State<HomeTab> {
             ),
           ),
           SliverToBoxAdapter(
-            child: SectionHeader(
-              title: 'WEBTOON ORIGINAL',
-              action: 'Lihat semua',
-              onTap: () => _openOfficialWebtoon(
-                context,
-                'WEBTOON Populer',
-                'https://www.webtoons.com/id/ranking/popular',
-              ),
-            ),
-          ),
-          SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: WebtoonPickCard(
-                      pick: officialWebtoonPicks[0],
-                      onTap: () => _openOfficialWebtoon(
-                        context,
-                        officialWebtoonPicks[0].title,
-                        officialWebtoonPicks[0].url,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: WebtoonPickCard(
-                      pick: officialWebtoonPicks[1],
-                      onTap: () => _openOfficialWebtoon(
-                        context,
-                        officialWebtoonPicks[1].title,
-                        officialWebtoonPicks[1].url,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: Material(
-                color: panel,
-                borderRadius: BorderRadius.circular(14),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(14),
-                  onTap: () => _openOfficialWebtoon(
-                    context,
-                    'WEBTOON Populer',
-                    'https://www.webtoons.com/id/ranking/popular',
-                  ),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 15, vertical: 14),
-                    child: Row(
-                      children: [
-                        Icon(Icons.language_rounded, color: accent, size: 22),
-                        SizedBox(width: 11),
-                        Expanded(
-                          child: Text(
-                            'Jelajahi semua komik WEBTOON',
-                            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
-                          ),
-                        ),
-                        Icon(Icons.arrow_forward_ios_rounded, color: accent, size: 15),
-                      ],
-                    ),
-                  ),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 2),
+              child: Container(
+                padding: const EdgeInsets.all(15),
+                decoration: BoxDecoration(
+                  color: panel,
+                  borderRadius: BorderRadius.circular(15),
+                  border: Border.all(color: stroke),
+                ),
+                child: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('MULTI-SOURCE CATALOG', style: TextStyle(
+                      color: accent, fontSize: 9, letterSpacing: 1.3,
+                      fontWeight: FontWeight.w900,
+                    )),
+                    SizedBox(height: 7),
+                    Text('Manga • Manhwa • Manhua • Novel',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
+                    SizedBox(height: 5),
+                    Text('Metadata disatukan dari MangaBaka, MangaDex, dan Jikan. Hasil dengan rating tidak aman disaring.',
+                      style: TextStyle(color: muted, fontSize: 10, height: 1.45)),
+                  ],
                 ),
               ),
             ),
@@ -1003,6 +1264,8 @@ class _DiscoveryTabState extends State<DiscoveryTab> {
     'Manhwa': ['manhwa'],
     'Manhua': ['manhua'],
     'Novel': ['novel'],
+    'Light Novel': ['lightnovel'],
+    'Webtoon': ['webtoon'],
     'OEL': ['oel'],
     'Lainnya': ['other'],
   };
@@ -1482,12 +1745,6 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
     );
   }
 
-  Future<void> _openSource() async {
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(builder: (_) => SourceWebPage(item: widget.item)),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final item = widget.item;
@@ -1564,15 +1821,28 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
-              child: FilledButton.icon(
-                onPressed: _openSource,
-                icon: const Icon(Icons.open_in_new_rounded),
-                label: const Text('Lihat sumber & opsi membaca'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: accent,
-                  foregroundColor: Colors.black,
-                  minimumSize: const Size.fromHeight(49),
-                  textStyle: const TextStyle(fontWeight: FontWeight.w900),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: panel,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: stroke),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.verified_outlined, color: accent, size: 19),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Sumber metadata', style: TextStyle(fontSize: 10, color: muted)),
+                          Text(item.source, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -1607,400 +1877,94 @@ class _InfoPill extends StatelessWidget {
       );
 }
 
-class SourceWebPage extends StatefulWidget {
-  const SourceWebPage({super.key, required this.item});
-  final SeriesItem item;
-
-  @override
-  State<SourceWebPage> createState() => _SourceWebPageState();
-}
-
-class _SourceWebPageState extends State<SourceWebPage> {
-  late final WebViewController _controller;
-  bool _loading = true;
-  bool _failed = false;
-  int _progress = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = WebViewController();
-    _configure();
-  }
-
-  Future<void> _configure() async {
-    try {
-      await _controller.setJavaScriptMode(JavaScriptMode.unrestricted);
-      await _controller.setBackgroundColor(bg);
-      await _controller.setNavigationDelegate(
-        NavigationDelegate(
-          onProgress: (value) {
-            if (mounted) setState(() => _progress = value);
-          },
-          onPageStarted: (_) {
-            if (mounted) setState(() {
-              _loading = true;
-              _failed = false;
-              _progress = 0;
-            });
-          },
-          onPageFinished: (_) {
-            if (mounted) setState(() {
-              _loading = false;
-              _progress = 100;
-            });
-          },
-          onWebResourceError: (error) {
-            if ((error.isForMainFrame ?? true) && mounted) {
-              setState(() {
-                _loading = false;
-                _failed = true;
-              });
-            }
-          },
-        ),
-      );
-      await _controller.loadRequest(Uri.parse(widget.item.url));
-    } catch (_) {
-      if (mounted) setState(() {
-        _loading = false;
-        _failed = true;
-      });
-    }
-  }
-
-  Future<void> _external() async {
-    final uri = Uri.tryParse(widget.item.url);
-    if (uri == null) return;
-    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Browser tidak dapat dibuka.')));
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(
-          title: Text(widget.item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
-          actions: [
-            IconButton(onPressed: () => _controller.reload(), icon: const Icon(Icons.refresh_rounded)),
-            IconButton(onPressed: _external, icon: const Icon(Icons.open_in_browser_rounded)),
-          ],
-        ),
-        body: Stack(
-          children: [
-            WebViewWidget(controller: _controller),
-            if (_loading)
-              Align(
-                alignment: Alignment.topCenter,
-                child: LinearProgressIndicator(
-                  value: _progress == 0 ? null : _progress / 100,
-                  minHeight: 2,
-                  color: accent,
-                  backgroundColor: Colors.transparent,
-                ),
-              ),
-            if (_failed)
-              Positioned.fill(
-                child: Container(
-                  color: bg,
-                  padding: const EdgeInsets.all(26),
-                  child: ErrorPanel(
-                    icon: Icons.language_rounded,
-                    title: 'Halaman sumber belum terbuka',
-                    message: 'Coba muat ulang atau lanjutkan melalui browser. Akses chapter mengikuti situs penyedianya.',
-                    onRetry: () {
-                      setState(() {
-                        _failed = false;
-                        _loading = true;
-                      });
-                      _controller.loadRequest(Uri.parse(widget.item.url));
-                    },
-                    retryLabel: 'Coba lagi',
-                    secondary: TextButton.icon(
-                      onPressed: _external,
-                      icon: const Icon(Icons.open_in_browser_rounded),
-                      label: const Text('Buka browser'),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      );
-}
-
-void _openOfficialWebtoon(BuildContext context, String title, String url) {
-  Navigator.of(context).push<void>(
-    MaterialPageRoute(
-      builder: (_) => OfficialWebtoonPage(title: title, url: url),
-    ),
-  );
-}
-
-class WebtoonPickCard extends StatelessWidget {
-  const WebtoonPickCard({super.key, required this.pick, required this.onTap});
-  final WebtoonPick pick;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => Material(
-        color: panel,
-        borderRadius: BorderRadius.circular(13),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              AspectRatio(
-                aspectRatio: .78,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Image.network(
-                      pick.coverUrl,
-                      fit: BoxFit.cover,
-                      headers: const {'Referer': 'https://m.webtoons.com/'},
-                      errorBuilder: (_, __, ___) => Container(
-                        color: panel2,
-                        alignment: Alignment.center,
-                        child: const Icon(Icons.auto_stories_rounded, color: accent, size: 38),
-                      ),
-                      loadingBuilder: (context, child, progress) => progress == null
-                          ? child
-                          : Container(
-                              color: panel2,
-                              alignment: Alignment.center,
-                              child: const CircularProgressIndicator(
-                                color: accent,
-                                strokeWidth: 2,
-                              ),
-                            ),
-                    ),
-                    Positioned(
-                      left: 7,
-                      top: 7,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: .82),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          pick.ageRating,
-                          style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w900),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(9, 9, 9, 10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      pick.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      pick.genre + ' • ' + pick.creator,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: muted, fontSize: 9),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-}
-
-class OfficialWebtoonPage extends StatefulWidget {
-  const OfficialWebtoonPage({super.key, required this.title, required this.url});
-  final String title;
-  final String url;
-
-  @override
-  State<OfficialWebtoonPage> createState() => _OfficialWebtoonPageState();
-}
-
-class _OfficialWebtoonPageState extends State<OfficialWebtoonPage> {
-  late final WebViewController _controller;
-  bool _loading = true;
-  bool _failed = false;
-  int _progress = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = WebViewController();
-    _configure();
-  }
-
-  Future<void> _configure() async {
-    try {
-      await _controller.setJavaScriptMode(JavaScriptMode.unrestricted);
-      await _controller.setBackgroundColor(bg);
-      await _controller.setNavigationDelegate(
-        NavigationDelegate(
-          onProgress: (value) {
-            if (mounted) setState(() => _progress = value);
-          },
-          onPageStarted: (_) {
-            if (mounted) setState(() {
-              _loading = true;
-              _failed = false;
-              _progress = 0;
-            });
-          },
-          onPageFinished: (_) {
-            if (mounted) setState(() {
-              _loading = false;
-              _progress = 100;
-            });
-          },
-          onWebResourceError: (error) {
-            if ((error.isForMainFrame ?? true) && mounted) {
-              setState(() {
-                _loading = false;
-                _failed = true;
-              });
-            }
-          },
-        ),
-      );
-      await _controller.loadRequest(Uri.parse(widget.url));
-    } catch (_) {
-      if (mounted) setState(() {
-        _loading = false;
-        _failed = true;
-      });
-    }
-  }
-
-  Future<void> _openExternal() async {
-    final uri = Uri.tryParse(widget.url);
-    if (uri == null) return;
-    try {
-      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!opened && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Browser eksternal tidak tersedia.')),
-        );
-      }
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Tidak bisa membuka browser eksternal.')),
-        );
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(
-          title: Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
-          actions: [
-            IconButton(onPressed: () => _controller.reload(), icon: const Icon(Icons.refresh_rounded)),
-            IconButton(onPressed: _openExternal, icon: const Icon(Icons.open_in_browser_rounded)),
-          ],
-        ),
-        body: Stack(
-          children: [
-            WebViewWidget(controller: _controller),
-            if (_loading)
-              Align(
-                alignment: Alignment.topCenter,
-                child: LinearProgressIndicator(
-                  value: _progress == 0 ? null : _progress / 100,
-                  minHeight: 2,
-                  color: accent,
-                  backgroundColor: Colors.transparent,
-                ),
-              ),
-            if (_failed)
-              Positioned.fill(
-                child: Container(
-                  color: bg,
-                  padding: const EdgeInsets.all(26),
-                  child: ErrorPanel(
-                    icon: Icons.language_rounded,
-                    title: 'WEBTOON belum terbuka',
-                    message: 'Periksa koneksi, lalu coba lagi atau buka melalui browser.',
-                    onRetry: () {
-                      setState(() {
-                        _failed = false;
-                        _loading = true;
-                        _progress = 0;
-                      });
-                      _controller.loadRequest(Uri.parse(widget.url));
-                    },
-                    secondary: TextButton.icon(
-                      onPressed: _openExternal,
-                      icon: const Icon(Icons.open_in_browser_rounded),
-                      label: const Text('Buka browser'),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      );
-}
-
 class AboutPage extends StatelessWidget {
   const AboutPage({super.key});
 
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(title: const Text('Tentang ManhwaKu')),
-        body: Padding(
+        body: ListView(
           padding: const EdgeInsets.all(22),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 64,
-                height: 64,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(color: accent, borderRadius: BorderRadius.circular(18)),
-                child: const Icon(Icons.menu_book_rounded, color: Colors.black, size: 35),
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: accent,
+                borderRadius: BorderRadius.circular(18),
               ),
-              const SizedBox(height: 16),
-              const Text('ManhwaKu', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
-              const Text('Versi 2.2', style: TextStyle(color: muted, fontSize: 11)),
-              const SizedBox(height: 14),
-              const Text(
-                'Temukan manga, manhwa, manhua, dan novel dalam satu aplikasi.',
-                style: TextStyle(color: Color(0xFFD0D0D0), fontSize: 13, height: 1.5),
-              ),
-              const SizedBox(height: 20),
-              FilledButton.icon(
-                onPressed: () => _openOfficialWebtoon(
-                  context,
-                  'WEBTOON Populer',
-                  'https://www.webtoons.com/id/ranking/popular',
-                ),
-                style: FilledButton.styleFrom(
-                  backgroundColor: accent,
-                  foregroundColor: Colors.black,
-                  minimumSize: const Size.fromHeight(48),
-                ),
-                icon: const Icon(Icons.language_rounded),
-                label: const Text('Buka WEBTOON'),
-              ),
-            ],
-          ),
+              child: const Icon(Icons.menu_book_rounded, color: Colors.black, size: 35),
+            ),
+            const SizedBox(height: 16),
+            const Text('ManhwaKu', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
+            const Text('Versi 2.4.0', style: TextStyle(color: muted, fontSize: 11)),
+            const SizedBox(height: 14),
+            const Text(
+              'Katalog penemuan komik dan novel dari beberapa sumber metadata publik. '
+              'Aplikasi menyaring hasil ke rating aman dan tidak mengunduh chapter dari situs pihak ketiga.',
+              style: TextStyle(color: Color(0xFFD0D0D0), fontSize: 13, height: 1.5),
+            ),
+            const SizedBox(height: 22),
+            const Text('SUMBER DATA', style: TextStyle(
+              color: accent, fontSize: 10, letterSpacing: 1.2, fontWeight: FontWeight.w900,
+            )),
+            const SizedBox(height: 10),
+            _SourceCredit(
+              title: 'MangaBaka',
+              url: 'https://mangabaka.org/developers',
+              note: 'Metadata • penggunaan personal/non-komersial • atribusi wajib',
+            ),
+            _SourceCredit(
+              title: 'MangaDex',
+              url: 'https://gitlab.com/mangadex-pub/mangadex-api-docs',
+              note: 'Metadata katalog • kebijakan penggunaan dan atribusi berlaku',
+            ),
+            _SourceCredit(
+              title: 'Jikan / MyAnimeList',
+              url: 'https://docs.api.jikan.moe/',
+              note: 'Metadata manga publik • tanpa API key',
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              'ManhwaKu tidak berafiliasi dengan penyedia data tersebut. '
+              'Judul, sampul, dan deskripsi tetap dimiliki pemegang hak masing-masing.',
+              style: TextStyle(color: muted, fontSize: 10, height: 1.5),
+            ),
+          ],
+        ),
+      );
+}
+
+class _SourceCredit extends StatelessWidget {
+  const _SourceCredit({
+    required this.title,
+    required this.url,
+    required this.note,
+  });
+
+  final String title;
+  final String url;
+  final String note;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        margin: const EdgeInsets.only(bottom: 9),
+        padding: const EdgeInsets.all(13),
+        decoration: BoxDecoration(
+          color: panel,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: stroke),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 4),
+            Text(note, style: const TextStyle(color: muted, fontSize: 10)),
+            const SizedBox(height: 4),
+            Text(url, style: const TextStyle(color: accent, fontSize: 9)),
+          ],
         ),
       );
 }

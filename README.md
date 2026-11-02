@@ -20,3 +20,8 @@ MangaBaka data is subject to its non-commercial licence and attribution requirem
 
 ## Build
 GitHub Actions runs Flutter analysis and widget tests, builds a release APK, and uploads the ManhwaKu-online-reader-release artifact.
+
+
+## Catalog sources (v2.4)
+
+ManhwaKu aggregates safe-rated public metadata from MangaBaka, MangaDex, and Jikan/MyAnimeList. Catalog responses are restricted to safe-rated entries. The app does not scrape third-party websites or embed third-party pages. Source terms and attribution requirements apply; MangaBaka data is for personal/non-commercial use unless separately licensed. The public catalog endpoints do not require end-user API keys.

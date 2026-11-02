@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:reader/main.dart';
 
 void main() {
-  testWidgets('ManhwaKu shows WEBTOON picks and native navigation', (tester) async {
+  testWidgets('ManhwaKu shows navigation and multi-source safe catalog', (tester) async {
     await tester.pumpWidget(const ManhwaKuApp());
     await tester.pump();
 
@@ -12,8 +12,7 @@ void main() {
     expect(find.text('CARI'), findsOneWidget);
     expect(find.text('FAVORIT'), findsOneWidget);
     expect(find.text('RIWAYAT'), findsOneWidget);
-    expect(find.text('WEBTOON ORIGINAL'), findsOneWidget);
-    expect(find.text('LOOKISM'), findsOneWidget);
-    expect(find.text('Eleceed'), findsOneWidget);
+    expect(find.text('MULTI-SOURCE CATALOG'), findsOneWidget);
+    expect(find.text('WEBTOON ORIGINAL'), findsNothing);
   });
 }
