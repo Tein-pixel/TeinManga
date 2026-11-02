@@ -175,6 +175,7 @@ private fun HomeScreen(
     var latest by remember { mutableStateOf<List<Series>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
 
     suspend fun load() {
         loading = true
@@ -242,7 +243,7 @@ private fun HomeScreen(
         if (loading && trending.isEmpty() && latest.isEmpty()) {
             item { LoadingState("Memuat katalog…") }
         } else if (error.isNotBlank() && trending.isEmpty() && latest.isEmpty()) {
-            item { ErrorState(error, "Coba lagi") { kotlinx.coroutines.MainScope().launch { load() } } }
+            item { ErrorState(error, "Coba lagi") { scope.launch { load() } } }
         } else {
             if (trending.isNotEmpty()) {
                 item { SectionTitle("Sedang populer", "Jelajahi", onExplore) }
@@ -364,13 +365,14 @@ private fun CatalogScreen(
     var page by remember { mutableIntStateOf(1) }
     var loading by remember { mutableStateOf(false) }
     var loadingMore by remember { mutableStateOf(false) }
+    var hasMore by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     var searched by remember { mutableStateOf(!isSearch) }
     val scope = rememberCoroutineScope()
 
     val types = listOf("Semua" to "all", "Manhwa" to "manhwa", "Manga" to "manga", "Manhua" to "manhua")
 
-    fun load(reset: Boolean, q: String = query) {
+    fun load(reset: Boolean, q: String = query, type: String = selectedType) {
         if (loading || loadingMore) return
         val nextPage = if (reset) 1 else page + 1
         if (reset) {
@@ -382,9 +384,10 @@ private fun CatalogScreen(
         } else loadingMore = true
         scope.launch {
             try {
-                val found = repository.search(q, nextPage, selectedType, latest = !isSearch && q.isBlank())
+                val found = repository.search(q, nextPage, type, latest = !isSearch && q.isBlank())
                 items = if (reset) found else (items + found).distinctBy { normalizeTitle(it.title) }
                 page = nextPage
+                hasMore = found.size >= 24
                 if (found.isEmpty() && reset) error = "Tidak ada judul yang cocok dalam katalog aman."
             } catch (_: Exception) {
                 error = "Pencarian gagal. Periksa koneksi lalu coba lagi."
@@ -439,7 +442,7 @@ private fun CatalogScreen(
                     selected = selectedType == value,
                     onClick = {
                         selectedType = value
-                        load(reset = true)
+                        load(reset = true, type = value)
                     },
                     label = { Text(label, fontSize = 11.sp) },
                     colors = FilterChipDefaults.filterChipColors(
@@ -483,7 +486,7 @@ private fun CatalogScreen(
                     } }
                 }
                 if (error.isNotBlank()) Text(error, color = Muted, fontSize = 10.sp, modifier = Modifier.padding(horizontal = 17.dp))
-                if (items.isNotEmpty()) {
+                if (hasMore) {
                     OutlinedButton(
                         onClick = { load(false) },
                         enabled = !loadingMore && !loading,
@@ -631,6 +634,7 @@ private fun DetailScreen(
     var loadingMeta by remember(initial.id) { mutableStateOf(false) }
     var loadingMatch by remember(initial.id) { mutableStateOf(true) }
     var mangaDexId by remember(initial.id) { mutableStateOf<String?>(initial.mangaDexId) }
+    var availableChapterLanguages by remember(initial.id) { mutableStateOf(listOf("id", "en")) }
     var chapters by remember(initial.id) { mutableStateOf<List<Chapter>>(emptyList()) }
     var chaptersLoading by remember(initial.id) { mutableStateOf(false) }
     var chaptersError by remember(initial.id) { mutableStateOf("") }
@@ -661,6 +665,7 @@ private fun DetailScreen(
         val freshMatch = repository.matchMangaDex(initial.copy(title = canonicalTitle(initial.title)))
         mangaDexId = freshMatch?.mangaDexId
         if (freshMatch != null) {
+            availableChapterLanguages = (listOf("id", "en") + freshMatch.availableLanguages).distinct()
             item = item.copy(
                 title = if (item.title.contains("pre-serialization", true)) freshMatch.title else item.title,
                 cover = freshMatch.cover.ifBlank { item.cover },
@@ -849,7 +854,7 @@ private fun DetailScreen(
                             Text(languageName(selectedLanguage), fontSize = 10.sp)
                         }
                         DropdownMenu(expanded = languageMenu, onDismissRequest = { languageMenu = false }) {
-                            (listOf("id", "all", "en") + item.availableLanguages).distinct().forEach { language ->
+                            (listOf("id", "all", "en") + availableChapterLanguages).distinct().forEach { language ->
                                 DropdownMenuItem(
                                     text = { Text(languageName(language)) },
                                     onClick = { selectedLanguage = language; languageMenu = false }
