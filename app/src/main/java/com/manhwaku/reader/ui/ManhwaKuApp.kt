@@ -176,6 +176,7 @@ private fun HomeScreen(
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
+    var showAbout by remember { mutableStateOf(false) }
 
     suspend fun load() {
         loading = true
@@ -194,6 +195,26 @@ private fun HomeScreen(
     }
 
     LaunchedEffect(Unit) { load() }
+
+    if (showAbout) {
+        AlertDialog(
+            onDismissRequest = { showAbout = false },
+            containerColor = Panel,
+            title = { Text("ManhwaKu", color = Ink, fontWeight = FontWeight.Black) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Versi native 3.0.1 · Kotlin + Jetpack Compose", color = Ink, fontSize = 12.sp)
+                    Text("Metadata katalog: MangaBaka. Daftar chapter dan reader: MangaDex.", color = Muted, fontSize = 11.sp)
+                    Text("Hanya judul dengan rating aman yang ditampilkan. Ketersediaan chapter bergantung pada bahasa dan sumber.", color = Muted, fontSize = 11.sp)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showAbout = false }) {
+                    Text("Tutup", color = Accent, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -215,7 +236,7 @@ private fun HomeScreen(
                     Text("Temukan bacaan berikutnya", color = Muted, fontSize = 10.sp)
                 }
                 IconButton(onClick = onSearch) { Icon(Icons.Default.Search, "Cari", tint = Ink) }
-                IconButton(onClick = { }) { Icon(Icons.Default.Info, "Tentang", tint = Muted) }
+                IconButton(onClick = { showAbout = true }) { Icon(Icons.Default.Info, "Tentang", tint = Muted) }
             }
         }
         item {
@@ -690,12 +711,13 @@ private fun DetailScreen(
 
     LaunchedEffect(mangaDexId, selectedLanguage) {
         val id = mangaDexId ?: return@LaunchedEffect
+        val requestedLanguage = selectedLanguage
         chaptersLoading = true
         chaptersError = ""
         chapters = emptyList()
-        autoFallback = false
+        if (requestedLanguage != "all") autoFallback = false
         try {
-            val result = repository.chapters(id, selectedLanguage, 0)
+            val result = repository.chapters(id, requestedLanguage, 0)
             chapters = result.first
             hasMore = result.first.size == 100
             if (result.second) {
@@ -873,8 +895,8 @@ private fun DetailScreen(
                         }
                     }
                     IconButton(onClick = {
-                        selectedLanguage = selectedLanguage
                         scope.launch {
+                            if (selectedLanguage != "all") autoFallback = false
                             chaptersLoading = true
                             try {
                                 val result = repository.chapters(mangaDexId.orEmpty(), selectedLanguage, 0)
