@@ -971,7 +971,7 @@ class CatalogApi {
       uri,
       headers: const {
         'Accept': 'application/json',
-        'User-Agent': 'ManhwaKu/2.9 (Android; catalog)',
+        'User-Agent': 'ManhwaKu/2.9.1 (Android; catalog)',
       },
       timeout: _providerTimeout,
     );
@@ -1034,7 +1034,7 @@ class CatalogApi {
       uri,
       headers: const {
         'Accept': 'application/json',
-        'User-Agent': 'ManhwaKu/2.9 (Android; safe-catalog)',
+        'User-Agent': 'ManhwaKu/2.9.1 (Android; safe-catalog)',
       },
       timeout: _providerTimeout,
     );
@@ -1306,7 +1306,7 @@ class MangaDexChapterApi {
       uri,
       headers: const {
         'Accept': 'application/json',
-        'User-Agent': 'ManhwaKu/2.9 (safe reader)',
+        'User-Agent': 'ManhwaKu/2.9.1 (safe reader)',
       },
       timeout: const Duration(seconds: 12),
     );
@@ -1344,12 +1344,15 @@ class MangaDexChapterApi {
       throw const FormatException('ID chapter tidak valid.');
     }
     final uri = Uri.https('api.mangadex.org', '/at-home/server/' + chapterId);
-    final response = await _client
-        .get(uri, headers: const {
-          'Accept': 'application/json',
-          'User-Agent': 'ManhwaKu/2.6 (safe reader)',
-        })
-        .timeout(const Duration(seconds: 15));
+    final response = await RespectfulHttp.get(
+      _client,
+      uri,
+      headers: const {
+        'Accept': 'application/json',
+        'User-Agent': 'ManhwaKu/2.9.1 (safe reader)',
+      },
+      timeout: const Duration(seconds: 15),
+    );
     if (response.statusCode != 200) {
       throw Exception(
         'Server gambar tidak tersedia (' + response.statusCode.toString() + ').',
@@ -1363,7 +1366,11 @@ class MangaDexChapterApi {
     final chapter = Map<String, dynamic>.from(decoded['chapter'] as Map);
     final baseUrl = _firstText([decoded['baseUrl']]);
     final baseUri = Uri.tryParse(baseUrl);
-    if (baseUri == null || baseUri.scheme != 'https' || baseUrl.isEmpty) {
+    if (baseUri == null ||
+        baseUri.scheme != 'https' ||
+        baseUri.host.isEmpty ||
+        baseUri.userInfo.isNotEmpty ||
+        baseUrl.isEmpty) {
       throw const FormatException('Alamat gambar chapter tidak aman.');
     }
 
@@ -1383,6 +1390,8 @@ class MangaDexChapterApi {
 
 
 class MangaDexChapterPage extends StatefulWidget {
+  static const String preferredLanguage = 'id';
+
   const MangaDexChapterPage({
     super.key,
     required this.item,
@@ -1398,8 +1407,7 @@ class MangaDexChapterPage extends StatefulWidget {
 
 class _MangaDexChapterPageState extends State<MangaDexChapterPage> {
   static const int _pageSize = 100;
-  static const String preferredLanguage = 'id';
-  String _language = preferredLanguage;
+  String _language = MangaDexChapterPage.preferredLanguage;
   final List<MangaDexChapter> _chapters = [];
   int _requestId = 0;
   bool _loading = true;
@@ -3124,7 +3132,7 @@ class MangaDexSeriesLookupApi {
       );
       final response = await _client.get(uri, headers: const {
         'Accept': 'application/json',
-        'User-Agent': 'ManhwaKu/2.7 (safe title match)',
+        'User-Agent': 'ManhwaKu/2.9.1 (safe title match)',
       }).timeout(const Duration(seconds: 8));
       if (response.statusCode != 200) return null;
 
