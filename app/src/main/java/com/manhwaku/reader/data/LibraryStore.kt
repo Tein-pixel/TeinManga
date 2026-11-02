@@ -54,11 +54,12 @@ class LibraryStore(context: Context) {
         val output = ByteArrayOutputStream()
         ObjectOutputStream(output).use { stream -> stream.writeObject(ArrayList(encoded)) }
         val stored = LIST_PREFIX + Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
-        prefs.edit().putString("flutter.$key", stored).commit()
+        prefs.edit().putString("flutter.$key", stored).apply()
     }
 
     fun favorites(): List<Series> = read("favorites")
     fun history(): List<Series> = read("history")
+    fun readingStatusList(status: String): List<Series> = if (status in STATUS_KEYS) read(status) else emptyList()
 
     @Synchronized
     fun toggleFavorite(item: Series): Boolean {
