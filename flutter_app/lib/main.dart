@@ -3417,6 +3417,7 @@ class _DetailAction extends StatelessWidget {
           ],
         ),
       );
+}
 
 class _InfoRow extends StatelessWidget {
   const _InfoRow({required this.label, required this.value});
