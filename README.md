@@ -49,3 +49,12 @@ MangaDex acceptable-use requirements apply: credit MangaDex and chapter groups, 
 - MangaDex and MangaBaka tags are checked against additional restricted-content labels when those tags are present in the response; content-rating safe remains a separate provider rating, not a universal maturity guarantee.
 
 Provider limits and licenses remain in force. MangaBaka data is personal/non-commercial with attribution. MangaDex API use requires provider and scanlation-group attribution and must follow its acceptable-use policy.
+
+
+## v2.6.2 fixes
+
+- Background title matching can connect subtitles/alternate title editions to MangaBaka full metadata without blocking the search screen.
+- MangaDex chapter list retries up to two alternate languages advertised on the title when the default first-open language has no safe chapter results.
+- Chapter feed pages are cached in memory for two minutes to reduce repeat waits; manually selected language remains respected.
+- Explicit refresh continues to bypass stale catalog metadata.
+- Regression tests cover v2 multilingual parsing, source-synopsis fallback, tag filtering and local reading-status persistence.
