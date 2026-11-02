@@ -900,7 +900,7 @@ class MangaBakaDetailsApi {
       });
 
       final matchedId = _toInt(candidates.first['id']);
-      return matchedId > 0 ? fetch(matchedId) : null;
+      return matchedId > 0 ? await fetch(matchedId) : null;
     } catch (_) {
       return null;
     }
@@ -2849,7 +2849,7 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
           contentRating: base.contentRating,
           source: base.source,
           availableTranslatedLanguages: base.availableTranslatedLanguages,
-          mangaBakaId: id,
+          mangaBakaId: base.mangaBakaId ?? full.mangaBakaId ?? full.id,
         );
       });
     } catch (_) {
