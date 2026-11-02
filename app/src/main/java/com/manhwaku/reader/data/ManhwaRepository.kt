@@ -332,7 +332,7 @@ internal fun parseChapterFeedResponse(json: JSONObject, offset: Int): ChapterPag
         val row = data.optJSONObject(index) ?: return@mapNotNull null
         val attrs = row.optJSONObject("attributes") ?: return@mapNotNull null
         val pages = attrs.optInt("pages")
-        if (pages <= 0 || attrs.optString("contentRating", "safe") != "safe") {
+        if (pages <= 0 || attrs.optString("contentRating", "unknown") != "safe") {
             return@mapNotNull null
         }
         val id = row.optString("id")
