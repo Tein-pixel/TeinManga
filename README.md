@@ -36,3 +36,16 @@ ManhwaKu aggregates safe-rated public metadata from MangaBaka, MangaDex, and Jik
 - ARM split APKs are built for armeabi-v7a and arm64-v8a. Android 10+ requires no manual multidex configuration.
 
 MangaDex acceptable-use requirements apply: credit MangaDex and chapter groups, honor removal requests, and do not add advertisements or paid services when using its API. MangaBaka is for personal/non-commercial use with attribution. Public metadata endpoints do not require an end-user API key.
+
+
+## v2.6.1 fixes
+
+- Catalog requests run through MangaBaka v2 and MangaDex with seven-second per-provider timeouts; Jikan is not on the blocking first-load route.
+- Memory + disk metadata cache allows a warm start to show saved results immediately and refresh in the background.
+- Explicit pull-to-refresh and retry actions bypass stale catalog cache.
+- Full MangaBaka detail records can enrich missing synopsis/cover metadata when a matching safe record ID is present; detail enrichment runs in the background and never blocks opening the details page.
+- MangaDex chapter language selection is driven by availableTranslatedLanguages and the original language, so Korean titles can default to the original language when Indonesian chapters are absent.
+- Chapter reader images and covers are disk cached and downsampled for lower-memory Android devices.
+- MangaDex and MangaBaka tags are checked against additional restricted-content labels when those tags are present in the response; content-rating safe remains a separate provider rating, not a universal maturity guarantee.
+
+Provider limits and licenses remain in force. MangaBaka data is personal/non-commercial with attribution. MangaDex API use requires provider and scanlation-group attribution and must follow its acceptable-use policy.

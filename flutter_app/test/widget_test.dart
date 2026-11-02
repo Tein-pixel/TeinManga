@@ -19,7 +19,67 @@ void main() {
     expect(find.text('RIWAYAT'), findsOneWidget);
     expect(find.text('MULTI-SOURCE CATALOG'), findsOneWidget);
     expect(find.text('WEBTOON ORIGINAL'), findsNothing);
-    expect(find.text('MULTI-SOURCE CATALOG'), findsOneWidget);
+  });
+
+
+  test('MangaBaka v2 parses multilingual title and cover fields', () {
+    final item = SeriesItem.fromMangaBakaV2({
+      'id': 123,
+      'titles': [
+        {'language': 'ko', 'title': '룩즘', 'is_primary': true},
+        {'language': 'en', 'title': 'Lookism', 'is_primary': true},
+      ],
+      'type': 'manhwa',
+      'canonical_url': 'https://mangabaka.org/series/123',
+      'cover': {'x350': 'https://img.example/cover.jpg'},
+      'description': 'A school drama.',
+      'status': 'completed',
+      'rating': 86,
+      'authors': ['PARK Tae Jun'],
+      'original_language': 'ko',
+      'content_rating': 'safe',
+    });
+    expect(item.title, 'Lookism');
+    expect(item.cover, 'https://img.example/cover.jpg');
+    expect(item.description, 'A school drama.');
+    expect(item.type, 'manhwa');
+    expect(item.language, 'ko');
+    expect(item.mangaBakaId, 123);
+  });
+
+  test('MangaDex synopsis falls back to the original language', () {
+    final item = SeriesItem.fromMangaDex({
+      'id': '11111111-2222-4333-8444-555555555555',
+      'attributes': {
+        'title': {'en': 'Test Manhwa', 'ko': '테스트 만화'},
+        'description': {'ko': '한국어 시놉시스'},
+        'originalLanguage': 'ko',
+        'availableTranslatedLanguages': ['en', 'ko'],
+        'contentRating': 'safe',
+        'status': 'completed',
+      },
+      'relationships': [],
+    });
+    expect(item.description, '한국어 시놉시스');
+    expect(item.availableTranslatedLanguages, containsAll(['en', 'ko']));
+  });
+
+  test('MangaDex marks titles with restricted safety tags as blocked', () {
+    final item = SeriesItem.fromMangaDex({
+      'id': '11111111-2222-4333-8444-555555555555',
+      'attributes': {
+        'title': {'en': 'Restricted tag test'},
+        'description': {},
+        'originalLanguage': 'ko',
+        'availableTranslatedLanguages': ['ko'],
+        'contentRating': 'safe',
+        'tags': [
+          {'attributes': {'name': {'en': 'Gore'}}},
+        ],
+      },
+      'relationships': [],
+    });
+    expect(item.contentRating, 'blocked');
   });
 
   test('Reading status is exclusive and persists locally', () async {
