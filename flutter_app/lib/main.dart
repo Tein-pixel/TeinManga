@@ -835,8 +835,83 @@ class MangaDexChapterApi {
     if (!_uuid.hasMatch(mangaId)) {
       throw const FormatException('ID MangaDex tidak valid.');
     }
-    if (language != 'id' && language != 'en') {
-      throw const FormatException('Bahasa chapter tidak didukung.');
+    final normalizedLanguage = language.toLowerCase();
+    if (!RegExp(r'^[a-z]{2}(?:-[a-z]{2})?
+    if (offset < 0) {
+      throw const FormatException('Offset chapter tidak valid.');
+    }
+    final uri = Uri.parse(
+      'https://api.mangadex.org/manga/$mangaId/feed'
+      '?limit=100'
+      '&offset=$offset'
+      '&translatedLanguage%5B%5D=$normalizedLanguage'
+      '&contentRating%5B%5D=safe'
+      '&includes%5B%5D=scanlation_group'
+      '&order%5Bvolume%5D=desc'
+      '&order%5Bchapter%5D=desc',
+    );
+    final response = await _client
+        .get(uri, headers: const {
+          'Accept': 'application/json',
+          'User-Agent': 'ManhwaKu/2.5 (safe reader)',
+        })
+        .timeout(const Duration(seconds: 18));
+    if (response.statusCode != 200) {
+      throw Exception('MangaDex tidak dapat memuat chapter (${response.statusCode}).');
+    }
+    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+    if (decoded is! Map || decoded['data'] is! List) {
+      throw const FormatException('Format daftar chapter tidak dikenali.');
+    }
+    return (decoded['data'] as List)
+        .whereType<Map>()
+        .map((row) => MangaDexChapter.fromJson(Map<String, dynamic>.from(row)))
+        .where((chapter) => chapter.id.isNotEmpty && chapter.pageCount > 0)
+        .toList();
+  }
+
+  static Future<List<String>> fetchPages(
+    String chapterId, {
+    bool dataSaver = true,
+  }) async {
+    if (!_uuid.hasMatch(chapterId)) {
+      throw const FormatException('ID chapter tidak valid.');
+    }
+    final uri = Uri.https('api.mangadex.org', '/at-home/server/$chapterId');
+    final response = await _client
+        .get(uri, headers: const {
+          'Accept': 'application/json',
+          'User-Agent': 'ManhwaKu/2.5 (safe reader)',
+        })
+        .timeout(const Duration(seconds: 18));
+    if (response.statusCode != 200) {
+      throw Exception('Server gambar tidak tersedia (${response.statusCode}).');
+    }
+    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+    if (decoded is! Map || decoded['chapter'] is! Map) {
+      throw const FormatException('Data chapter tidak dikenali.');
+    }
+    final chapter = Map<String, dynamic>.from(decoded['chapter'] as Map);
+    final baseUrl = _firstText([decoded['baseUrl']]);
+    final baseUri = Uri.tryParse(baseUrl);
+    if (baseUri == null || baseUri.scheme != 'https' || baseUrl.isEmpty) {
+      throw const FormatException('Alamat gambar chapter tidak aman.');
+    }
+    final hash = _firstText([chapter['hash']]);
+    final rawFiles = dataSaver ? chapter['dataSaver'] : chapter['data'];
+    if (hash.isEmpty || rawFiles is! List || rawFiles.isEmpty) {
+      throw const FormatException('Halaman chapter tidak tersedia.');
+    }
+    final quality = dataSaver ? 'data-saver' : 'data';
+    return rawFiles
+        .whereType<String>()
+        .map((file) => '$baseUrl/$quality/$hash/${Uri.encodeComponent(file)}')
+        .toList();
+  }
+}
+
+).hasMatch(normalizedLanguage)) {
+      throw const FormatException('Kode bahasa chapter tidak valid.');
     }
     if (offset < 0) {
       throw const FormatException('Offset chapter tidak valid.');
@@ -845,7 +920,7 @@ class MangaDexChapterApi {
       'https://api.mangadex.org/manga/$mangaId/feed'
       '?limit=100'
       '&offset=$offset'
-      '&translatedLanguage%5B%5D=$language'
+      '&translatedLanguage%5B%5D=$normalizedLanguage'
       '&contentRating%5B%5D=safe'
       '&includes%5B%5D=scanlation_group'
       '&order%5Bvolume%5D=desc'
