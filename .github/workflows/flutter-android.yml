@@ -51,7 +51,7 @@ jobs:
       - name: Upload release APKs
         uses: actions/upload-artifact@v4
         with:
-          name: ManhwaKu-v2.9.1-android-arm-apks
+          name: ManhwaKu-v2.9.2-android-arm-apks
           path: |
             flutter_app/build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
             flutter_app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
