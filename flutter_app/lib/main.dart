@@ -1003,6 +1003,9 @@ class MangaDexChapter {
 
 class MangaDexChapterApi {
   static final http.Client _client = http.Client();
+  static const Duration _chapterCacheTtl = Duration(minutes: 2);
+  static final Map<String, List<MangaDexChapter>> _chapterCache = {};
+  static final Map<String, DateTime> _chapterCacheTime = {};
   static final RegExp _uuid = RegExp(
     r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
   );
@@ -1021,6 +1024,15 @@ class MangaDexChapterApi {
     }
     if (offset < 0) {
       throw const FormatException('Offset chapter tidak valid.');
+    }
+
+    final cacheKey = mangaId + '|' + normalizedLanguage + '|' + offset.toString();
+    final cached = _chapterCache[cacheKey];
+    final cacheTime = _chapterCacheTime[cacheKey];
+    if (cached != null &&
+        cacheTime != null &&
+        DateTime.now().difference(cacheTime) < _chapterCacheTtl) {
+      return cached;
     }
 
     final uri = Uri.parse(
@@ -1047,11 +1059,19 @@ class MangaDexChapterApi {
       throw const FormatException('Format daftar chapter tidak dikenali.');
     }
 
-    return (decoded['data'] as List)
+    final chapters = (decoded['data'] as List)
         .whereType<Map>()
         .map((row) => MangaDexChapter.fromJson(Map<String, dynamic>.from(row)))
         .where((chapter) => chapter.id.isNotEmpty && chapter.pageCount > 0)
         .toList();
+    _chapterCache[cacheKey] = chapters;
+    _chapterCacheTime[cacheKey] = DateTime.now();
+    if (_chapterCache.length > 40) {
+      final oldestKey = _chapterCache.keys.first;
+      _chapterCache.remove(oldestKey);
+      _chapterCacheTime.remove(oldestKey);
+    }
+    return chapters;
   }
 
   static Future<List<String>> fetchPages(
@@ -1156,10 +1176,13 @@ class _MangaDexChapterPageState extends State<MangaDexChapterPage> {
   void initState() {
     super.initState();
     _language = _initialLanguage();
-    _load(reset: true);
+    _load(reset: true, allowAutoFallback: true);
   }
 
-  Future<void> _load({bool reset = false}) async {
+  Future<void> _load({
+    bool reset = false,
+    bool allowAutoFallback = false,
+  }) async {
     if (!reset && (_loading || _loadingMore || !_hasMore)) return;
     final request = ++_requestId;
     final offset = reset ? 0 : _chapters.length;
@@ -1176,13 +1199,57 @@ class _MangaDexChapterPageState extends State<MangaDexChapterPage> {
     });
 
     try {
-      final fetched = await MangaDexChapterApi.fetchChapters(
+      var resolvedLanguage = _language;
+      var fetched = await MangaDexChapterApi.fetchChapters(
         widget.mangaId,
-        language: _language,
+        language: resolvedLanguage,
         offset: offset,
       );
+
+      // On the first open only, an empty selected-language feed tries the
+      // original language and English from the title's published translations.
+      if (reset && allowAutoFallback && fetched.isEmpty) {
+        final candidates = <String>[];
+        final preferred = [
+          widget.item.language.toLowerCase(),
+          'en',
+          'id',
+        ];
+        for (final language in preferred) {
+          if (language != resolvedLanguage &&
+              _availableLanguages.contains(language) &&
+              !candidates.contains(language)) {
+            candidates.add(language);
+          }
+        }
+
+        final fallbackResults = await Future.wait(
+          candidates.take(2).map((language) async {
+            try {
+              final chapters = await MangaDexChapterApi.fetchChapters(
+                widget.mangaId,
+                language: language,
+                offset: 0,
+              );
+              return MapEntry(language, chapters);
+            } catch (_) {
+              return MapEntry(language, const <MangaDexChapter>[]);
+            }
+          }),
+        );
+
+        for (final result in fallbackResults) {
+          if (result.value.isNotEmpty) {
+            resolvedLanguage = result.key;
+            fetched = result.value;
+            break;
+          }
+        }
+      }
+
       if (!mounted || request != _requestId) return;
       setState(() {
+        _language = resolvedLanguage;
         final seen = _chapters.map((chapter) => chapter.id).toSet();
         for (final chapter in fetched) {
           if (seen.add(chapter.id)) _chapters.add(chapter);
