@@ -3,6 +3,8 @@ name: ManhwaKu Kotlin Android
 on:
   push:
     branches: [ "**" ]
+  pull_request:
+    branches: [ "main" ]
     paths:
       - "app/**"
       - "build.gradle.kts"
