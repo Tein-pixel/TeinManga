@@ -100,6 +100,35 @@ class NativeModelTest {
         assertFalse(parsedEmpty.hasMore)
     }
 
+    @Test
+    fun chapterParserRejectsMissingAndUnknownContentRatings() {
+        val missingRating = chapterRecord(
+            "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+            pages = 12
+        ).apply {
+            getJSONObject("attributes").remove("contentRating")
+        }
+        val unknownRating = chapterRecord(
+            "ffffffff-ffff-4fff-8fff-ffffffffffff",
+            pages = 12,
+            rating = "unknown"
+        )
+        val safeRating = chapterRecord(
+            "99999999-9999-4999-8999-999999999999",
+            pages = 12,
+            rating = "safe"
+        )
+        val response = JSONObject().put(
+            "data",
+            JSONArray().put(missingRating).put(unknownRating).put(safeRating)
+        )
+
+        val page = ManhwaRepository().parseChapterFeedResponse(response, offset = 0)
+
+        assertEquals(1, page.chapters.size)
+        assertEquals("99999999-9999-4999-8999-999999999999", page.chapters.single().id)
+    }
+
     private fun chapterRecord(
         id: String,
         pages: Int,
