@@ -2,7 +2,7 @@ name: ManhwaKu Kotlin Android
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "**" ]
     paths:
       - "app/**"
       - "build.gradle.kts"
@@ -33,7 +33,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ManhwaKu-Kotlin-v3.0.0-debug-apk
+          name: ManhwaKu-Kotlin-v3.0.1-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
