@@ -26,10 +26,12 @@ Future<void> main() async {
 }
 
 class ManhwaKuApp extends StatelessWidget {
-  const ManhwaKuApp({super.key});
+  const ManhwaKuApp({super.key, this.testMode = false});
+  final bool testMode;
 
   @override
   Widget build(BuildContext context) {
+    CatalogApi.testMode = testMode;
     return MaterialApp(
       title: 'ManhwaKu',
       debugShowCheckedModeBanner: false,
@@ -326,6 +328,21 @@ String typeLabel(String value) {
   }
 }
 
+String readingStatusLabel(String value) {
+  switch (value) {
+    case 'reading':
+      return 'Sedang dibaca';
+    case 'planned':
+      return 'Rencana baca';
+    case 'completed':
+      return 'Selesai';
+    case 'dropped':
+      return 'Dihentikan';
+    default:
+      return 'Belum diatur';
+  }
+}
+
 String statusLabel(String value) {
   switch (value.toLowerCase()) {
     case 'releasing':
@@ -350,6 +367,7 @@ class _CatalogCacheEntry {
 }
 
 class CatalogApi {
+  static bool testMode = false;
   static final http.Client _client = http.Client();
   static const int pageSize = 24;
   static const int _providerPageSize = 12;
@@ -379,6 +397,7 @@ class CatalogApi {
     String sortBy = 'trending_7d',
     int page = 1,
   }) async {
+    if (testMode) return const <SeriesItem>[];
     final cleanQuery = (query ?? '').trim();
     final cacheKey = '${cleanQuery.toLowerCase()}|${types.join(",")}|$sortBy|$page';
     final cached = _cache[cacheKey];
@@ -614,6 +633,458 @@ class CatalogApi {
   }
 }
 
+class MangaDexChapter {
+  const MangaDexChapter({
+    required this.id,
+    required this.number,
+    required this.title,
+    required this.volume,
+    required this.pageCount,
+    required this.scanlationGroup,
+    required this.language,
+  });
+
+  final String id;
+  final String number;
+  final String title;
+  final String volume;
+  final int pageCount;
+  final String scanlationGroup;
+  final String language;
+
+  factory MangaDexChapter.fromJson(Map<String, dynamic> json) {
+    final attributes = json['attributes'] is Map
+        ? Map<String, dynamic>.from(json['attributes'] as Map)
+        : <String, dynamic>{};
+    final relations = json['relationships'] is List
+        ? json['relationships'] as List
+        : const [];
+    var group = '';
+    for (final relation in relations.whereType<Map>()) {
+      if (relation['type'] == 'scanlation_group') {
+        final data = relation['attributes'] is Map
+            ? Map<String, dynamic>.from(relation['attributes'] as Map)
+            : <String, dynamic>{};
+        group = _firstText([data['name']]);
+        if (group.isNotEmpty) break;
+      }
+    }
+    return MangaDexChapter(
+      id: _firstText([json['id']]),
+      number: _firstText([attributes['chapter'], 'Oneshot']),
+      title: _firstText([attributes['title']]),
+      volume: _firstText([attributes['volume']]),
+      pageCount: _toInt(attributes['pages']),
+      scanlationGroup: group,
+      language: _firstText([attributes['translatedLanguage']]),
+    );
+  }
+}
+
+class MangaDexChapterApi {
+  static final http.Client _client = http.Client();
+  static final RegExp _uuid = RegExp(
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+  );
+
+  static Future<List<MangaDexChapter>> fetchChapters(
+    String mangaId, {
+    String language = 'id',
+  }) async {
+    if (!_uuid.hasMatch(mangaId)) {
+      throw const FormatException('ID MangaDex tidak valid.');
+    }
+    if (language != 'id' && language != 'en') {
+      throw const FormatException('Bahasa chapter tidak didukung.');
+    }
+    final uri = Uri.parse(
+      'https://api.mangadex.org/manga/$mangaId/feed'
+      '?limit=100'
+      '&translatedLanguage%5B%5D=$language'
+      '&contentRating%5B%5D=safe'
+      '&includes%5B%5D=scanlation_group'
+      '&order%5Bvolume%5D=asc'
+      '&order%5Bchapter%5D=asc',
+    );
+    final response = await _client
+        .get(uri, headers: const {
+          'Accept': 'application/json',
+          'User-Agent': 'ManhwaKu/2.5 (safe reader)',
+        })
+        .timeout(const Duration(seconds: 18));
+    if (response.statusCode != 200) {
+      throw Exception('MangaDex tidak dapat memuat chapter (${response.statusCode}).');
+    }
+    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+    if (decoded is! Map || decoded['data'] is! List) {
+      throw const FormatException('Format daftar chapter tidak dikenali.');
+    }
+    return (decoded['data'] as List)
+        .whereType<Map>()
+        .map((row) => MangaDexChapter.fromJson(Map<String, dynamic>.from(row)))
+        .where((chapter) => chapter.id.isNotEmpty && chapter.pageCount > 0)
+        .toList();
+  }
+
+  static Future<List<String>> fetchPages(
+    String chapterId, {
+    bool dataSaver = true,
+  }) async {
+    if (!_uuid.hasMatch(chapterId)) {
+      throw const FormatException('ID chapter tidak valid.');
+    }
+    final uri = Uri.https('api.mangadex.org', '/at-home/server/$chapterId');
+    final response = await _client
+        .get(uri, headers: const {
+          'Accept': 'application/json',
+          'User-Agent': 'ManhwaKu/2.5 (safe reader)',
+        })
+        .timeout(const Duration(seconds: 18));
+    if (response.statusCode != 200) {
+      throw Exception('Server gambar tidak tersedia (${response.statusCode}).');
+    }
+    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+    if (decoded is! Map || decoded['chapter'] is! Map) {
+      throw const FormatException('Data chapter tidak dikenali.');
+    }
+    final chapter = Map<String, dynamic>.from(decoded['chapter'] as Map);
+    final baseUrl = _firstText([decoded['baseUrl']]);
+    final baseUri = Uri.tryParse(baseUrl);
+    if (baseUri == null || baseUri.scheme != 'https' || baseUrl.isEmpty) {
+      throw const FormatException('Alamat gambar chapter tidak aman.');
+    }
+    final hash = _firstText([chapter['hash']]);
+    final rawFiles = dataSaver ? chapter['dataSaver'] : chapter['data'];
+    if (hash.isEmpty || rawFiles is! List || rawFiles.isEmpty) {
+      throw const FormatException('Halaman chapter tidak tersedia.');
+    }
+    final quality = dataSaver ? 'data-saver' : 'data';
+    return rawFiles
+        .whereType<String>()
+        .map((file) => '$baseUrl/$quality/$hash/${Uri.encodeComponent(file)}')
+        .toList();
+  }
+}
+
+class MangaDexChapterPage extends StatefulWidget {
+  const MangaDexChapterPage({
+    super.key,
+    required this.item,
+    required this.mangaId,
+  });
+
+  final SeriesItem item;
+  final String mangaId;
+
+  @override
+  State<MangaDexChapterPage> createState() => _MangaDexChapterPageState();
+}
+
+class _MangaDexChapterPageState extends State<MangaDexChapterPage> {
+  String _language = 'id';
+  late Future<List<MangaDexChapter>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = MangaDexChapterApi.fetchChapters(
+      widget.mangaId,
+      language: _language,
+    );
+  }
+
+  void _changeLanguage(String language) {
+    setState(() {
+      _language = language;
+      _future = MangaDexChapterApi.fetchChapters(
+        widget.mangaId,
+        language: language,
+      );
+    });
+  }
+
+  void _openChapter(MangaDexChapter chapter) {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => MangaDexReaderPage(
+          item: widget.item,
+          chapter: chapter,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(
+          title: const Text('Daftar chapter'),
+          actions: [
+            PopupMenuButton<String>(
+              tooltip: 'Bahasa chapter',
+              initialValue: _language,
+              onSelected: _changeLanguage,
+              itemBuilder: (context) => const [
+                PopupMenuItem(value: 'id', child: Text('Indonesia')),
+                PopupMenuItem(value: 'en', child: Text('English')),
+              ],
+              icon: const Icon(Icons.translate_rounded),
+            ),
+          ],
+        ),
+        body: FutureBuilder<List<MangaDexChapter>>(
+          future: _future,
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return ErrorPanel(
+                title: 'Chapter gagal dimuat',
+                message: 'Sumber sedang tidak merespons. Coba lagi.',
+                onRetry: () => _changeLanguage(_language),
+              );
+            }
+            if (!snapshot.hasData) {
+              return const Center(
+                child: CircularProgressIndicator(color: accent),
+              );
+            }
+            final chapters = snapshot.data!;
+            if (chapters.isEmpty) {
+              return const ErrorPanel(
+                icon: Icons.menu_book_outlined,
+                title: 'Belum ada chapter',
+                message: 'Belum ditemukan chapter berlabel aman dalam bahasa ini.',
+              );
+            }
+            return ListView.separated(
+              padding: const EdgeInsets.all(14),
+              itemCount: chapters.length,
+              separatorBuilder: (_, __) => const Divider(color: stroke, height: 1),
+              itemBuilder: (context, index) {
+                final chapter = chapters[index];
+                final number = chapter.number.isEmpty
+                    ? 'Chapter'
+                    : 'Chapter ${chapter.number}';
+                return ListTile(
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  leading: Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: panel,
+                      borderRadius: BorderRadius.circular(11),
+                    ),
+                    alignment: Alignment.center,
+                    child: const Icon(Icons.menu_book_rounded, color: accent),
+                  ),
+                  title: Text(
+                    chapter.title.isEmpty
+                        ? number
+                        : '$number • ${chapter.title}',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+                  ),
+                  subtitle: Text(
+                    [
+                      if (chapter.volume.isNotEmpty) 'Vol. ${chapter.volume}',
+                      '${chapter.pageCount} halaman',
+                      if (chapter.scanlationGroup.isNotEmpty)
+                        'Grup: ${chapter.scanlationGroup}',
+                    ].join(' • '),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: muted, fontSize: 10),
+                  ),
+                  trailing: const Icon(Icons.chevron_right_rounded, color: accent),
+                  onTap: () => _openChapter(chapter),
+                );
+              },
+            );
+          },
+        ),
+      );
+}
+
+class MangaDexReaderPage extends StatefulWidget {
+  const MangaDexReaderPage({
+    super.key,
+    required this.item,
+    required this.chapter,
+  });
+
+  final SeriesItem item;
+  final MangaDexChapter chapter;
+
+  @override
+  State<MangaDexReaderPage> createState() => _MangaDexReaderPageState();
+}
+
+class _MangaDexReaderPageState extends State<MangaDexReaderPage> {
+  late Future<List<String>> _pages;
+  late bool _verticalMode;
+  bool _dataSaver = true;
+  int _currentPage = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _verticalMode = widget.item.type == 'manhwa' ||
+        widget.item.type == 'webtoon';
+    _pages = MangaDexChapterApi.fetchPages(
+      widget.chapter.id,
+      dataSaver: _dataSaver,
+    );
+  }
+
+  void _reload() {
+    setState(() {
+      _pages = MangaDexChapterApi.fetchPages(
+        widget.chapter.id,
+        dataSaver: _dataSaver,
+      );
+    });
+  }
+
+  void _toggleQuality() {
+    setState(() {
+      _dataSaver = !_dataSaver;
+      _currentPage = 0;
+      _pages = MangaDexChapterApi.fetchPages(
+        widget.chapter.id,
+        dataSaver: _dataSaver,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        backgroundColor: Colors.black,
+        appBar: AppBar(
+          backgroundColor: Colors.black,
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                widget.item.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+              ),
+              Text(
+                'Chapter ${widget.chapter.number} • ${_currentPage + 1}',
+                style: const TextStyle(color: muted, fontSize: 9),
+              ),
+            ],
+          ),
+          actions: [
+            IconButton(
+              tooltip: _verticalMode ? 'Mode halaman' : 'Mode scroll vertikal',
+              onPressed: () => setState(() => _verticalMode = !_verticalMode),
+              icon: Icon(
+                _verticalMode
+                    ? Icons.view_agenda_outlined
+                    : Icons.chrome_reader_mode_outlined,
+              ),
+            ),
+            IconButton(
+              tooltip: _dataSaver
+                  ? 'Kualitas gambar hemat data'
+                  : 'Kualitas gambar tinggi',
+              onPressed: _toggleQuality,
+              icon: Icon(
+                _dataSaver
+                    ? Icons.data_saver_on_rounded
+                    : Icons.high_quality_rounded,
+              ),
+            ),
+          ],
+        ),
+        body: FutureBuilder<List<String>>(
+          future: _pages,
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return ErrorPanel(
+                title: 'Halaman gagal dimuat',
+                message: 'Periksa koneksi atau coba lagi.',
+                onRetry: _reload,
+                retryLabel: 'Muat ulang',
+              );
+            }
+            if (!snapshot.hasData) {
+              return const Center(
+                child: CircularProgressIndicator(color: accent),
+              );
+            }
+            final pages = snapshot.data!;
+            if (pages.isEmpty) {
+              return const ErrorPanel(
+                title: 'Chapter kosong',
+                message: 'Tidak ada halaman yang tersedia untuk chapter ini.',
+              );
+            }
+            if (_verticalMode) {
+              return ListView.builder(
+                itemCount: pages.length,
+                itemBuilder: (context, index) => Image.network(
+                  pages[index],
+                  width: double.infinity,
+                  fit: BoxFit.fitWidth,
+                  gaplessPlayback: true,
+                  errorBuilder: (_, __, ___) => Container(
+                    height: 150,
+                    alignment: Alignment.center,
+                    color: panel,
+                    child: TextButton.icon(
+                      onPressed: _reload,
+                      icon: const Icon(Icons.refresh_rounded),
+                      label: Text('Ulangi halaman ${index + 1}'),
+                    ),
+                  ),
+                ),
+              );
+            }
+            return PageView.builder(
+              itemCount: pages.length,
+              onPageChanged: (index) {
+                if (mounted) setState(() => _currentPage = index);
+              },
+              itemBuilder: (context, index) => InteractiveViewer(
+                minScale: 1,
+                maxScale: 4,
+                child: Center(
+                  child: Image.network(
+                    pages[index],
+                    fit: BoxFit.contain,
+                    gaplessPlayback: true,
+                    errorBuilder: (_, __, ___) => TextButton.icon(
+                      onPressed: _reload,
+                      icon: const Icon(Icons.refresh_rounded),
+                      label: const Text('Coba muat ulang'),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+        bottomNavigationBar: Container(
+          color: Colors.black,
+          padding: const EdgeInsets.fromLTRB(12, 7, 12, 10),
+          child: SafeArea(
+            top: false,
+            child: Text(
+              'Sumber: MangaDex • Grup: ${widget.chapter.scanlationGroup.isEmpty ? 'tidak tercantum' : widget.chapter.scanlationGroup}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: muted, fontSize: 9),
+            ),
+          ),
+        ),
+      );
+}
+
+
 class LocalLibrary {
   static Future<SharedPreferences> get _prefs =>
       SharedPreferences.getInstance();
@@ -670,6 +1141,34 @@ class LocalLibrary {
     await _write(key, items);
   }
 
+  static const List<String> readingStatusKeys = [
+    'reading',
+    'planned',
+    'completed',
+    'dropped',
+  ];
+
+  static Future<String> statusFor(int id) async {
+    for (final key in readingStatusKeys) {
+      final items = await read(key);
+      if (items.any((item) => item.id == id)) return key;
+    }
+    return 'none';
+  }
+
+  static Future<void> setStatus(SeriesItem item, String status) async {
+    for (final key in readingStatusKeys) {
+      final items = await read(key);
+      final filtered = items.where((entry) => entry.id != item.id).toList();
+      if (filtered.length != items.length) await _write(key, filtered);
+    }
+    if (readingStatusKeys.contains(status)) {
+      final items = await read(status);
+      items.insert(0, item);
+      await _write(status, items.take(200).toList());
+    }
+  }
+
   static Future<void> clear(String key) async {
     await (await _prefs).remove(key);
   }
@@ -686,56 +1185,102 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   int _tab = 0;
+  late final List<Widget?> _screens;
+
+  @override
+  void initState() {
+    super.initState();
+    _screens = List<Widget?>.filled(5, null);
+    _screens[0] = _buildScreen(0);
+  }
+
+  Widget _buildScreen(int index) {
+    switch (index) {
+      case 0:
+        return HomeTab(
+          onOpen: _openSeries,
+          onSearch: () => _selectTab(2),
+          onExplore: () => _selectTab(1),
+          onFavorites: () => _selectTab(3),
+          onHistory: () => _selectTab(4),
+        );
+      case 1:
+        return DiscoveryTab(onOpen: _openSeries);
+      case 2:
+        return SearchTab(onOpen: _openSeries);
+      case 3:
+        return LibraryTab(onOpen: _openSeries, mode: 'favorites');
+      default:
+        return LibraryTab(onOpen: _openSeries, mode: 'history');
+    }
+  }
+
+  void _selectTab(int index) {
+    if (index < 0 || index >= _screens.length) return;
+    setState(() {
+      _tab = index;
+      _screens[index] ??= _buildScreen(index);
+    });
+  }
 
   Future<void> _openSeries(SeriesItem item) async {
     await LocalLibrary.addHistory(item);
     if (!mounted) return;
     await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (_) => SeriesDetailsPage(item: item),
-      ),
+      MaterialPageRoute(builder: (_) => SeriesDetailsPage(item: item)),
     );
     if (mounted) setState(() {});
   }
 
-  void _goSearch() => setState(() => _tab = 2);
-
   @override
-  Widget build(BuildContext context) {
-    final screens = <Widget>[
-      HomeTab(onOpen: _openSeries, onSearch: _goSearch, onExplore: () => setState(() => _tab = 1), onFavorites: () => setState(() => _tab = 3), onHistory: () => setState(() => _tab = 4)),
-      DiscoveryTab(onOpen: _openSeries),
-      SearchTab(onOpen: _openSeries),
-      LibraryTab(onOpen: _openSeries, mode: 'favorites'),
-      LibraryTab(onOpen: _openSeries, mode: 'history'),
-    ];
-
-    return Scaffold(
-      body: SafeArea(
-        top: false,
-        child: IndexedStack(index: _tab, children: screens),
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _tab,
-        onTap: (value) => setState(() => _tab = value),
-        type: BottomNavigationBarType.fixed,
-        backgroundColor: Colors.black,
-        selectedItemColor: accent,
-        unselectedItemColor: const Color(0xFF858585),
-        selectedFontSize: 10,
-        unselectedFontSize: 10,
-        showUnselectedLabels: true,
-        elevation: 12,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home_outlined), activeIcon: Icon(Icons.home_rounded), label: 'HOME'),
-          BottomNavigationBarItem(icon: Icon(Icons.local_fire_department_outlined), activeIcon: Icon(Icons.local_fire_department_rounded), label: 'BARU & HOT'),
-          BottomNavigationBarItem(icon: Icon(Icons.search_rounded), label: 'CARI'),
-          BottomNavigationBarItem(icon: Icon(Icons.bookmark_border_rounded), activeIcon: Icon(Icons.bookmark_rounded), label: 'FAVORIT'),
-          BottomNavigationBarItem(icon: Icon(Icons.history_rounded), label: 'RIWAYAT'),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Scaffold(
+        body: SafeArea(
+          top: false,
+          child: IndexedStack(
+            index: _tab,
+            children: _screens
+                .map((screen) => screen ?? const SizedBox.shrink())
+                .toList(),
+          ),
+        ),
+        bottomNavigationBar: BottomNavigationBar(
+          currentIndex: _tab,
+          onTap: _selectTab,
+          type: BottomNavigationBarType.fixed,
+          backgroundColor: Colors.black,
+          selectedItemColor: accent,
+          unselectedItemColor: const Color(0xFF858585),
+          selectedFontSize: 10,
+          unselectedFontSize: 10,
+          showUnselectedLabels: true,
+          elevation: 12,
+          items: const [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.home_outlined),
+              activeIcon: Icon(Icons.home_rounded),
+              label: 'HOME',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.local_fire_department_outlined),
+              activeIcon: Icon(Icons.local_fire_department_rounded),
+              label: 'BARU & HOT',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.search_rounded),
+              label: 'CARI',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.bookmark_border_rounded),
+              activeIcon: Icon(Icons.bookmark_rounded),
+              label: 'KOLEKSI',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.history_rounded),
+              label: 'RIWAYAT',
+            ),
+          ],
+        ),
+      );
 }
 
 class HomeTab extends StatefulWidget {
@@ -1638,14 +2183,30 @@ class LibraryTab extends StatefulWidget {
 
 class _LibraryTabState extends State<LibraryTab> {
   late Future<List<SeriesItem>> _future;
+  String _selectedFilter = 'favorites';
 
-  String get _key => widget.mode == 'favorites' ? 'favorites' : 'history';
-  String get _title => widget.mode == 'favorites' ? 'Favorit' : 'Riwayat baca';
+  String get _key => widget.mode == 'favorites' ? _selectedFilter : 'history';
+  String get _title => widget.mode == 'favorites' ? 'Koleksi' : 'Riwayat baca';
+
+  static const Map<String, String> _filters = {
+    'favorites': 'Favorit',
+    'reading': 'Sedang dibaca',
+    'planned': 'Rencana',
+    'completed': 'Selesai',
+    'dropped': 'Dihentikan',
+  };
 
   @override
   void initState() {
     super.initState();
     _future = LocalLibrary.read(_key);
+  }
+
+  void _selectFilter(String key) {
+    setState(() {
+      _selectedFilter = key;
+      _future = LocalLibrary.read(_key);
+    });
   }
 
   Future<void> _clear() async {
@@ -1654,12 +2215,35 @@ class _LibraryTabState extends State<LibraryTab> {
     setState(() => _future = LocalLibrary.read(_key));
   }
 
+  String get _emptyTitle {
+    if (widget.mode == 'history') return 'Belum ada riwayat';
+    switch (_selectedFilter) {
+      case 'favorites':
+        return 'Belum ada favorit';
+      case 'reading':
+        return 'Belum ada bacaan aktif';
+      case 'planned':
+        return 'Belum ada rencana baca';
+      case 'completed':
+        return 'Belum ada judul selesai';
+      default:
+        return 'Belum ada judul dihentikan';
+    }
+  }
+
+  String get _emptyMessage => widget.mode == 'history'
+      ? 'Judul yang pernah kamu buka akan tampil di sini.'
+      : 'Atur status bacaan dari halaman detail sebuah judul.';
+
   @override
   Widget build(BuildContext context) => FutureBuilder<List<SeriesItem>>(
         future: _future,
         builder: (context, snapshot) {
           if (snapshot.hasError) {
-            return const ErrorPanel(title: 'Koleksi gagal dibuka', message: 'Silakan coba kembali.');
+            return const ErrorPanel(
+              title: 'Koleksi gagal dibuka',
+              message: 'Silakan coba kembali.',
+            );
           }
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator(color: accent));
@@ -1668,10 +2252,23 @@ class _LibraryTabState extends State<LibraryTab> {
           return Column(
             children: [
               Padding(
-                padding: EdgeInsets.fromLTRB(18, MediaQuery.paddingOf(context).top + 16, 18, 12),
+                padding: EdgeInsets.fromLTRB(
+                  18,
+                  MediaQuery.paddingOf(context).top + 16,
+                  18,
+                  12,
+                ),
                 child: Row(
                   children: [
-                    Expanded(child: Text(_title, style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w900))),
+                    Expanded(
+                      child: Text(
+                        _title,
+                        style: const TextStyle(
+                          fontSize: 25,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
                     if (items.isNotEmpty)
                       TextButton(
                         onPressed: _clear,
@@ -1680,19 +2277,48 @@ class _LibraryTabState extends State<LibraryTab> {
                   ],
                 ),
               ),
+              if (widget.mode == 'favorites')
+                SizedBox(
+                  height: 43,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 13),
+                    children: _filters.entries.map((entry) {
+                      final selected = _selectedFilter == entry.key;
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: ChoiceChip(
+                          label: Text(entry.value),
+                          selected: selected,
+                          onSelected: (_) => _selectFilter(entry.key),
+                          selectedColor: accent,
+                          backgroundColor: panel,
+                          labelStyle: TextStyle(
+                            color: selected ? Colors.black : ink,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                          ),
+                          side: BorderSide(color: selected ? accent : stroke),
+                          showCheckmark: false,
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
               Expanded(
                 child: items.isEmpty
                     ? ErrorPanel(
-                        icon: widget.mode == 'favorites' ? Icons.bookmark_border_rounded : Icons.history_rounded,
-                        title: widget.mode == 'favorites' ? 'Belum ada favorit' : 'Belum ada riwayat',
-                        message: widget.mode == 'favorites'
-                            ? 'Simpan judul dari halaman detail untuk menemukannya di sini.'
-                            : 'Judul yang pernah kamu buka akan tampil di sini.',
+                        icon: widget.mode == 'favorites'
+                            ? Icons.bookmark_border_rounded
+                            : Icons.history_rounded,
+                        title: _emptyTitle,
+                        message: _emptyMessage,
                       )
                     : GridView.builder(
                         padding: const EdgeInsets.fromLTRB(14, 8, 14, 20),
                         itemCount: items.length,
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: 3,
                           mainAxisSpacing: 15,
                           crossAxisSpacing: 10,
@@ -1700,7 +2326,10 @@ class _LibraryTabState extends State<LibraryTab> {
                         ),
                         itemBuilder: (context, index) {
                           final item = items[index];
-                          return SeriesCard(item: item, onTap: () => widget.onOpen(item));
+                          return SeriesCard(
+                            item: item,
+                            onTap: () => widget.onOpen(item),
+                          );
                         },
                       ),
               ),
@@ -1721,6 +2350,7 @@ class SeriesDetailsPage extends StatefulWidget {
 class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
   bool _saved = false;
   bool _ready = false;
+  String _readingStatus = 'none';
 
   @override
   void initState() {
@@ -1729,11 +2359,27 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
   }
 
   Future<void> _loadSaved() async {
-    final value = await LocalLibrary.isFavorite(widget.item.id);
-    if (mounted) setState(() {
-      _saved = value;
+    final values = await Future.wait([
+      LocalLibrary.isFavorite(widget.item.id),
+      LocalLibrary.statusFor(widget.item.id),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      _saved = values[0] as bool;
+      _readingStatus = values[1] as String;
       _ready = true;
     });
+  }
+
+  Future<void> _setReadingStatus(String status) async {
+    await LocalLibrary.setStatus(widget.item, status);
+    if (!mounted) return;
+    setState(() => _readingStatus = status);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Status bacaan: ${readingStatusLabel(status)}'),
+      ),
+    );
   }
 
   Future<void> _toggleSaved() async {
@@ -1755,7 +2401,29 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
           IconButton(
             onPressed: _ready ? _toggleSaved : null,
             tooltip: _saved ? 'Hapus favorit' : 'Simpan favorit',
-            icon: Icon(_saved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded, color: _saved ? accent : ink),
+            icon: Icon(
+              _saved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+              color: _saved ? accent : ink,
+            ),
+          ),
+          PopupMenuButton<String>(
+            tooltip: 'Status bacaan',
+            enabled: _ready,
+            initialValue: _readingStatus,
+            onSelected: _setReadingStatus,
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 'reading', child: Text('Sedang dibaca')),
+              PopupMenuItem(value: 'planned', child: Text('Rencana baca')),
+              PopupMenuItem(value: 'completed', child: Text('Selesai')),
+              PopupMenuItem(value: 'dropped', child: Text('Dihentikan')),
+              PopupMenuItem(value: 'none', child: Text('Hapus status')),
+            ],
+            icon: Icon(
+              _readingStatus == 'none'
+                  ? Icons.playlist_add_rounded
+                  : Icons.playlist_add_check_circle_rounded,
+              color: _readingStatus == 'none' ? ink : accent,
+            ),
           ),
           IconButton(
             tooltip: 'Bagikan judul',
@@ -1847,6 +2515,208 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
               ),
             ),
           ),
+          if (item.source == 'MangaDex')
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
+                child: FilledButton.icon(
+                  onPressed: () {
+                    final parts = Uri.tryParse(item.url)?.pathSegments ?? const [];
+                    final titleIndex = parts.indexOf('title');
+                    final mangaId = titleIndex >= 0 && titleIndex + 1 < parts.length
+                        ? parts[titleIndex + 1]
+                        : '';
+                    if (!RegExp(r'^[0-9a-fA-F-]{36}          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 9),
+              child: const Text('SINOPSIS', style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: .7, fontSize: 13)),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 22),
+              child: Text(item.description, style: const TextStyle(color: Color(0xFFD0D0D0), fontSize: 12, height: 1.55)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoPill extends StatelessWidget {
+  const _InfoPill({required this.text});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(color: panel2, borderRadius: BorderRadius.circular(7)),
+        child: Text(text, style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w700)),
+      );
+}
+
+class AboutPage extends StatelessWidget {
+  const AboutPage({super.key});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(title: const Text('Tentang ManhwaKu')),
+        body: ListView(
+          padding: const EdgeInsets.all(22),
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: accent,
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: const Icon(Icons.menu_book_rounded, color: Colors.black, size: 35),
+            ),
+            const SizedBox(height: 16),
+            const Text('ManhwaKu', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
+            const Text('Versi 2.4.0', style: TextStyle(color: muted, fontSize: 11)),
+            const SizedBox(height: 14),
+            const Text(
+              'Katalog penemuan komik dan novel dari beberapa sumber metadata publik. '
+              'Aplikasi menyaring hasil ke rating aman dan tidak mengunduh chapter dari situs pihak ketiga.',
+              style: TextStyle(color: Color(0xFFD0D0D0), fontSize: 13, height: 1.5),
+            ),
+            const SizedBox(height: 22),
+            const Text('SUMBER DATA', style: TextStyle(
+              color: accent, fontSize: 10, letterSpacing: 1.2, fontWeight: FontWeight.w900,
+            )),
+            const SizedBox(height: 10),
+            _SourceCredit(
+              title: 'MangaBaka',
+              url: 'https://mangabaka.org/developers',
+              note: 'Metadata • penggunaan personal/non-komersial • atribusi wajib',
+            ),
+            _SourceCredit(
+              title: 'MangaDex',
+              url: 'https://gitlab.com/mangadex-pub/mangadex-api-docs',
+              note: 'Metadata katalog • kebijakan penggunaan dan atribusi berlaku',
+            ),
+            _SourceCredit(
+              title: 'Jikan / MyAnimeList',
+              url: 'https://docs.api.jikan.moe/',
+              note: 'Metadata manga publik • tanpa API key',
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              'ManhwaKu tidak berafiliasi dengan penyedia data tersebut. '
+              'Judul, sampul, dan deskripsi tetap dimiliki pemegang hak masing-masing.',
+              style: TextStyle(color: muted, fontSize: 10, height: 1.5),
+            ),
+          ],
+        ),
+      );
+}
+
+class _SourceCredit extends StatelessWidget {
+  const _SourceCredit({
+    required this.title,
+    required this.url,
+    required this.note,
+  });
+
+  final String title;
+  final String url;
+  final String note;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        margin: const EdgeInsets.only(bottom: 9),
+        padding: const EdgeInsets.all(13),
+        decoration: BoxDecoration(
+          color: panel,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: stroke),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 4),
+            Text(note, style: const TextStyle(color: muted, fontSize: 10)),
+            const SizedBox(height: 4),
+            Text(url, style: const TextStyle(color: accent, fontSize: 9)),
+          ],
+        ),
+      );
+}
+
+class ErrorPanel extends StatelessWidget {
+  const ErrorPanel({
+    super.key,
+    this.icon = Icons.cloud_off_rounded,
+    this.title = 'Tidak dapat memuat data',
+    required this.message,
+    this.onRetry,
+    this.retryLabel = 'Coba lagi',
+    this.secondary,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+  final VoidCallback? onRetry;
+  final String retryLabel;
+  final Widget? secondary;
+
+  @override
+  Widget build(BuildContext context) => Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 26),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: accent, size: 43),
+              const SizedBox(height: 13),
+              Text(title, textAlign: TextAlign.center, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 7),
+              Text(message, textAlign: TextAlign.center, style: const TextStyle(color: muted, fontSize: 11, height: 1.45)),
+              if (onRetry != null) ...[
+                const SizedBox(height: 15),
+                FilledButton(
+                  onPressed: onRetry,
+                  style: FilledButton.styleFrom(backgroundColor: accent, foregroundColor: Colors.black),
+                  child: Text(retryLabel),
+                ),
+              ],
+              if (secondary != null) secondary!,
+            ],
+          ),
+        ),
+      );
+}
+).hasMatch(mangaId)) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('ID MangaDex tidak valid.')),
+                      );
+                      return;
+                    }
+                    Navigator.of(context).push<void>(
+                      MaterialPageRoute(
+                        builder: (_) => MangaDexChapterPage(
+                          item: item,
+                          mangaId: mangaId,
+                        ),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.menu_book_rounded),
+                  label: const Text('Buka daftar chapter'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: accent,
+                    foregroundColor: Colors.black,
+                    minimumSize: const Size.fromHeight(48),
+                  ),
+                ),
+              ),
+            ),
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(18, 0, 18, 9),

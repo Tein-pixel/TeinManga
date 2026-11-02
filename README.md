@@ -25,3 +25,14 @@ GitHub Actions runs Flutter analysis and widget tests, builds a release APK, and
 ## Catalog sources (v2.4)
 
 ManhwaKu aggregates safe-rated public metadata from MangaBaka, MangaDex, and Jikan/MyAnimeList. Catalog responses are restricted to safe-rated entries. The app does not scrape third-party websites or embed third-party pages. Source terms and attribution requirements apply; MangaBaka data is for personal/non-commercial use unless separately licensed. The public catalog endpoints do not require end-user API keys.
+
+
+## v2.5.0 updates
+
+- Safe-rated metadata catalog from MangaBaka, MangaDex, and Jikan.
+- Native chapter list and reader for MangaDex titles explicitly rated safe; Indonesian and English chapter lists; data-saver image mode; vertical and paged reading modes; scanlation-group attribution.
+- Local reading shelves: Reading, Planned, Completed, and Dropped.
+- Lazy tab creation prevents unused catalog tabs from making requests during cold launch.
+- ARM split APKs are built for armeabi-v7a and arm64-v8a. Android 10+ requires no manual multidex configuration.
+
+MangaDex acceptable-use requirements apply: credit MangaDex and chapter groups, honor removal requests, and do not add advertisements or paid services when using its API. MangaBaka is for personal/non-commercial use with attribution. Public metadata endpoints do not require an end-user API key.
