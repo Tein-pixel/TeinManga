@@ -81,6 +81,7 @@ class SeriesItem {
     required this.contentRating,
     this.source = 'MangaBaka',
     this.availableTranslatedLanguages = const <String>[],
+    this.mangaBakaId,
   });
 
   final int id;
@@ -96,6 +97,7 @@ class SeriesItem {
   final String contentRating;
   final String source;
   final List<String> availableTranslatedLanguages;
+  final int? mangaBakaId;
 
   factory SeriesItem.fromJson(Map<String, dynamic> json) {
     final coverData = json['cover'] is Map
@@ -201,6 +203,7 @@ class SeriesItem {
       language: language,
       contentRating: hasRestrictedTags ? 'blocked' : _firstText([json['content_rating'], 'safe']),
       source: 'MangaBaka',
+      mangaBakaId: _toInt(json['id']) > 0 ? _toInt(json['id']) : null,
     );
   }
 
@@ -339,6 +342,7 @@ class SeriesItem {
         source: _firstText([json['source'], 'MangaBaka']),
         availableTranslatedLanguages: (json['availableTranslatedLanguages'] as List?)
             ?.whereType<String>().toList() ?? const <String>[],
+        mangaBakaId: json['mangaBakaId'] is num ? (json['mangaBakaId'] as num).toInt() : null,
       );
 
   Map<String, dynamic> toMap() => {
@@ -355,6 +359,7 @@ class SeriesItem {
         'contentRating': contentRating,
         'source': source,
         'availableTranslatedLanguages': availableTranslatedLanguages,
+        'mangaBakaId': mangaBakaId,
       };
 }
 
@@ -678,6 +683,7 @@ class CatalogApi {
                 primary.availableTranslatedLanguages.isNotEmpty
                     ? primary.availableTranslatedLanguages
                     : supplement.availableTranslatedLanguages,
+            mangaBakaId: primary.mangaBakaId ?? supplement.mangaBakaId,
           );
           seenIds.add(item.id);
           continue;
@@ -796,6 +802,54 @@ class CatalogApi {
         .map((row) => SeriesItem.fromMangaDex(Map<String, dynamic>.from(row)))
         .where((item) => item.id > 0 && item.contentRating == 'safe')
         .toList();
+  }
+}
+
+class MangaBakaDetailsApi {
+  static final http.Client _client = http.Client();
+  static final Map<int, SeriesItem> _cache = {};
+  static final Map<int, Future<SeriesItem?>> _inFlight = {};
+
+  static Future<SeriesItem?> fetch(int id) async {
+    if (id <= 0) return null;
+    final cached = _cache[id];
+    if (cached != null) return cached;
+    final existing = _inFlight[id];
+    if (existing != null) return existing;
+
+    final request = _fetch(id);
+    _inFlight[id] = request;
+    try {
+      final result = await request;
+      if (result != null) _cache[id] = result;
+      return result;
+    } finally {
+      _inFlight.remove(id);
+    }
+  }
+
+  static Future<SeriesItem?> _fetch(int id) async {
+    final uri = Uri.https(
+      'api.mangabaka.org',
+      '/v2/series/$id',
+      const {'schema': 'full'},
+    );
+    final response = await _client
+        .get(uri, headers: const {
+          'Accept': 'application/json',
+          'User-Agent': 'ManhwaKu/2.6 Android',
+        })
+        .timeout(const Duration(seconds: 6));
+    if (response.statusCode != 200) return null;
+
+    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+    if (decoded is! Map) return null;
+    final raw = decoded['data'] is Map ? decoded['data'] : decoded;
+    if (raw is! Map) return null;
+    final data = Map<String, dynamic>.from(raw);
+    final item = SeriesItem.fromMangaBakaV2(data);
+    if (item.id <= 0 || item.contentRating != 'safe') return null;
+    return item;
   }
 }
 
@@ -2643,12 +2697,16 @@ class SeriesDetailsPage extends StatefulWidget {
 class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
   bool _saved = false;
   bool _ready = false;
+  bool _enriching = false;
+  late SeriesItem _displayItem;
   String _readingStatus = 'none';
 
   @override
   void initState() {
     super.initState();
+    _displayItem = widget.item;
     _loadSaved();
+    _enrichMetadata();
   }
 
   Future<void> _loadSaved() async {
@@ -2662,6 +2720,46 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
       _readingStatus = values[1] as String;
       _ready = true;
     });
+  }
+
+
+  Future<void> _enrichMetadata() async {
+    final id = widget.item.mangaBakaId ??
+        (widget.item.source == 'MangaBaka' ? widget.item.id : null);
+    if (id == null || id <= 0) return;
+    if (widget.item.description != 'Deskripsi belum tersedia.' &&
+        widget.item.cover.isNotEmpty) return;
+
+    if (mounted) setState(() => _enriching = true);
+    try {
+      final full = await MangaBakaDetailsApi.fetch(id);
+      if (!mounted || full == null) return;
+      final base = _displayItem;
+      final hasSynopsis = base.description.isNotEmpty &&
+          base.description != 'Deskripsi belum tersedia.';
+      setState(() {
+        _displayItem = SeriesItem(
+          id: base.id,
+          title: base.title,
+          type: base.type,
+          url: base.url,
+          cover: base.cover.isNotEmpty ? base.cover : full.cover,
+          description: hasSynopsis ? base.description : full.description,
+          status: base.status == 'unknown' ? full.status : base.status,
+          rating: base.rating ?? full.rating,
+          author: base.author.isNotEmpty ? base.author : full.author,
+          language: base.language == 'unknown' ? full.language : base.language,
+          contentRating: base.contentRating,
+          source: base.source,
+          availableTranslatedLanguages: base.availableTranslatedLanguages,
+          mangaBakaId: id,
+        );
+      });
+    } catch (_) {
+      // Detail metadata is optional; keep the initial fast page intact.
+    } finally {
+      if (mounted) setState(() => _enriching = false);
+    }
   }
 
   Future<void> _setReadingStatus(String status) async {
@@ -2684,7 +2782,7 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final item = widget.item;
+    final item = _displayItem;
     return Scaffold(
       appBar: AppBar(
         title: Text(typeLabel(item.type), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
@@ -2842,7 +2940,16 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(18, 0, 18, 22),
-              child: Text(item.description, style: const TextStyle(color: Color(0xFFD0D0D0), fontSize: 12, height: 1.55)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(item.description, style: const TextStyle(color: Color(0xFFD0D0D0), fontSize: 12, height: 1.55)),
+                  if (_enriching && item.description == 'Deskripsi belum tersedia.') ...[
+                    const SizedBox(height: 8),
+                    const Text('Memuat sinopsis tambahan…', style: TextStyle(color: muted, fontSize: 10)),
+                  ],
+                ],
+              ),
             ),
           ),
         ],
