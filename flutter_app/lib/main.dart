@@ -266,7 +266,10 @@ class SeriesItem {
         : entry.toString()).where((name) => name.trim().isNotEmpty).take(2).join(', ');
     final ratingValue = json['rating'];
     final hasRestrictedTags = _hasRestrictedTags(json['tags']);
-    final publisherUrl = _extractPublisherUrl(json['links_v2']);
+    final publisherUrl = _extractPublisherUrl(
+      json['links_v2'],
+      legacyLinks: json['links'],
+    );
 
     return SeriesItem(
       id: _toInt(json['id']),
@@ -471,26 +474,47 @@ class SeriesItem {
 }
 
 
-String _extractPublisherUrl(dynamic rawLinks) {
-  if (rawLinks is! List) return '';
-  for (final raw in rawLinks) {
-    if (raw is! Map) continue;
-    final type = raw['type']?.toString().toLowerCase();
-    final trust = raw['trust_level']?.toString().toLowerCase();
-    final status = raw['status']?.toString().toLowerCase();
-    if ((type != 'publisher' && type != 'webplatform') ||
-        (trust != 'official' && trust != 'trusted') ||
-        status != 'active') {
-      continue;
-    }
+String _extractPublisherUrl(dynamic rawLinks, {dynamic legacyLinks}) {
+  Uri? trustedHttpsUrl(dynamic raw) {
+    if (raw is! Map) return null;
     final candidate = Uri.tryParse(_firstText([raw['url']]));
     if (candidate == null ||
-        candidate.scheme != 'https' ||
+        candidate.scheme.toLowerCase() != 'https' ||
         candidate.host.isEmpty ||
         candidate.userInfo.isNotEmpty) {
-      continue;
+      return null;
     }
-    return candidate.toString();
+    return candidate;
+  }
+
+  // Current MangaBaka v2 records use `links`; newer records may expose
+  // `links_v2` with explicit trust and status fields.
+  if (rawLinks is List) {
+    for (final raw in rawLinks) {
+      if (raw is! Map) continue;
+      final type = raw['type']?.toString().toLowerCase();
+      final trust = raw['trust_level']?.toString().toLowerCase();
+      final status = raw['status']?.toString().toLowerCase();
+      final explicitlyTrustedPlatform = type == 'webplatform' &&
+          (trust == 'official' || trust == 'trusted') && status == 'active';
+      if (type != 'publisher' && !explicitlyTrustedPlatform) continue;
+      if (status.isNotEmpty && status != 'active') continue;
+      if (trust.isNotEmpty && trust != 'official' && trust != 'trusted') continue;
+      final candidate = trustedHttpsUrl(raw);
+      if (candidate != null) return candidate.toString();
+    }
+  }
+
+  // A legacy `publisher` link is explicitly typed by MangaBaka. Do not
+  // promote unverified webplatform/mirror records to publisher links.
+  if (legacyLinks is List) {
+    for (final raw in legacyLinks) {
+      if (raw is! Map || raw['type']?.toString().toLowerCase() != 'publisher') {
+        continue;
+      }
+      final candidate = trustedHttpsUrl(raw);
+      if (candidate != null) return candidate.toString();
+    }
   }
   return '';
 }
