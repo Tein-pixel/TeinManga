@@ -1447,6 +1447,7 @@ class _MangaDexChapterPageState extends State<MangaDexChapterPage> {
   bool _loading = true;
   bool _loadingMore = false;
   bool _hasMore = false;
+  bool _usingLanguageFallback = false;
   String? _error;
 
   List<String> get _availableLanguages {
@@ -1486,10 +1487,13 @@ class _MangaDexChapterPageState extends State<MangaDexChapterPage> {
   @override
   void initState() {
     super.initState();
-    _load(reset: true);
+    _load(reset: true, allowAutomaticLanguageFallback: true);
   }
 
-  Future<void> _load({bool reset = false}) async {
+  Future<void> _load({
+    bool reset = false,
+    bool allowAutomaticLanguageFallback = false,
+  }) async {
     if (!reset && (_loading || _loadingMore || !_hasMore)) return;
     final request = ++_requestId;
     final offset = reset ? 0 : _chapters.length;
@@ -1506,17 +1510,40 @@ class _MangaDexChapterPageState extends State<MangaDexChapterPage> {
     });
 
     try {
-      final fetched = await MangaDexChapterApi.fetchChapters(
+      var fetched = await MangaDexChapterApi.fetchChapters(
         widget.mangaId,
         language: _language,
         offset: offset,
       );
+      var resolvedLanguage = _language;
+      var usedLanguageFallback = false;
+
+      // If there is no Indonesian feed, inspect the source's combined feed
+      // once so Korean/English/other available chapters are not hidden.
+      if (reset &&
+          allowAutomaticLanguageFallback &&
+          _language == MangaDexChapterPage.preferredLanguage &&
+          fetched.isEmpty) {
+        final allLanguages = await MangaDexChapterApi.fetchChapters(
+          widget.mangaId,
+          language: 'all',
+          offset: 0,
+        );
+        if (allLanguages.isNotEmpty) {
+          fetched = allLanguages;
+          resolvedLanguage = 'all';
+          usedLanguageFallback = true;
+        }
+      }
+
       if (!mounted || request != _requestId) return;
       setState(() {
         final seen = _chapters.map((chapter) => chapter.id).toSet();
         for (final chapter in fetched) {
           if (seen.add(chapter.id)) _chapters.add(chapter);
         }
+        _language = resolvedLanguage;
+        _usingLanguageFallback = usedLanguageFallback;
         _hasMore = fetched.length == _pageSize;
         _loading = false;
         _loadingMore = false;
@@ -1533,7 +1560,10 @@ class _MangaDexChapterPageState extends State<MangaDexChapterPage> {
 
   void _changeLanguage(String language) {
     if (!_availableLanguages.contains(language) || language == _language) return;
-    setState(() => _language = language);
+    setState(() {
+      _language = language;
+      _usingLanguageFallback = false;
+    });
     _load(reset: true);
   }
 
@@ -1598,6 +1628,22 @@ class _MangaDexChapterPageState extends State<MangaDexChapterPage> {
             ],
           ),
         ),
+        if (_usingLanguageFallback)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 0, 18, 9),
+            child: Row(
+              children: [
+                const Icon(Icons.info_outline_rounded, color: accent, size: 15),
+                const SizedBox(width: 7),
+                Expanded(
+                  child: Text(
+                    'Chapter Indonesia belum tersedia. Menampilkan bahasa lain yang tersedia.',
+                    style: const TextStyle(color: muted, fontSize: 10),
+                  ),
+                ),
+              ],
+            ),
+          ),
         Expanded(
           child: _loading && _chapters.isEmpty
               ? const Center(child: CircularProgressIndicator(color: accent))
@@ -1615,9 +1661,7 @@ class _MangaDexChapterPageState extends State<MangaDexChapterPage> {
                               ? 'Belum ada chapter bahasa Indonesia dari sumber yang terhubung. Pilih Semua bahasa untuk memeriksa terjemahan lain.'
                               : 'Belum ada chapter aman dalam bahasa yang dipilih.',
                           onRetry: () => _load(reset: true),
-                          secondary: widget.item.publisherUrl.isNotEmpty
-                              ? PublisherLinkButton(publisherUrl: widget.item.publisherUrl)
-                              : null,
+                          secondary: OfficialReadingLinkButton(item: widget.item),
                         )
                       : ListView.separated(
                           padding: const EdgeInsets.fromLTRB(16, 3, 16, 18),
