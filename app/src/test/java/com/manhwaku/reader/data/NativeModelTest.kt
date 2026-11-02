@@ -74,6 +74,15 @@ class NativeModelTest {
     }
 
     @Test
+    fun mangaBakaParserRejectsTagsWithNonSafeContentRating() {
+        val ratedTag = JSONObject()
+            .put("name", JSONObject().put("en", "Romance"))
+            .put("content_rating", "suggestive")
+
+        assertNull(Series.fromMangaBaka(mangaBakaRecord("safe", JSONArray().put(ratedTag))))
+    }
+
+    @Test
     fun chapterPaginationAdvancesByRawRowsNotOnlyValidChapters() {
         val response = JSONObject()
             .put("total", 105)
@@ -193,7 +202,7 @@ class NativeModelTest {
                 )
         )
 
-    private fun mangaBakaRecord(contentRating: String) = JSONObject()
+    private fun mangaBakaRecord(contentRating: String, tags: JSONArray = JSONArray()) = JSONObject()
         .put("id", 73)
         .put("original_language", "ko")
         .put(
@@ -216,5 +225,5 @@ class NativeModelTest {
         )
         .put("authors", JSONArray().put("Creator"))
         .put("content_rating", contentRating)
-        .put("tags", JSONArray())
+        .put("tags", tags)
 }

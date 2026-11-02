@@ -50,7 +50,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import com.manhwaku.reader.data.Chapter
 import com.manhwaku.reader.data.LibraryStore
@@ -673,22 +673,34 @@ private fun SeriesCard(item: Series, onOpen: (Series) -> Unit) {
 
 @Composable
 private fun SeriesCover(url: String, modifier: Modifier = Modifier, large: Boolean = false) {
+    val imageModifier = modifier.clip(RoundedCornerShape(12.dp)).background(Panel2)
     if (url.isBlank()) {
-        Box(modifier.clip(RoundedCornerShape(10.dp)).background(Panel2), contentAlignment = Alignment.Center) {
-            Icon(Icons.Default.MenuBook, null, tint = Muted, modifier = Modifier.size(28.dp))
-        }
+        Box(imageModifier, contentAlignment = Alignment.Center) { BrandMark(30) }
     } else {
-        AsyncImage(
+        SubcomposeAsyncImage(
             model = ImageRequest.Builder(LocalContext.current)
                 .data(url)
-                .memoryCacheKey("$url::manhwaku-native-v1")
-                .diskCacheKey("$url::manhwaku-native-v1")
-                .crossfade(120)
+                .memoryCacheKey("$url::manhwaku-native-v2")
+                .diskCacheKey("$url::manhwaku-native-v2")
+                .crossfade(180)
                 .size(if (large) 720 else 480)
                 .build(),
             contentDescription = null,
-            modifier = modifier.clip(RoundedCornerShape(10.dp)).background(Panel2),
-            contentScale = ContentScale.Crop
+            modifier = imageModifier,
+            contentScale = ContentScale.Crop,
+            loading = {
+                Box(
+                    Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Panel2, Panel))),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = Accent, strokeWidth = 2.dp, modifier = Modifier.size(22.dp))
+                }
+            },
+            error = {
+                Box(Modifier.fillMaxSize().background(Panel2), contentAlignment = Alignment.Center) {
+                    BrandMark(30)
+                }
+            }
         )
     }
 }

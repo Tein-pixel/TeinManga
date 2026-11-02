@@ -321,8 +321,9 @@ private fun hasRestrictedTags(tags: JSONArray?): Boolean {
             nameObject.keys().asSequence().map { nameObject.optString(it) }.joinToString(" ")
         } else attrs.optString("name")
         if (blocked.any { name.contains(it, ignoreCase = true) }) return true
-        val rating = attrs.optString("contentRating").lowercase(Locale.ROOT)
-        if (rating in setOf("suggestive", "erotica", "pornographic")) return true
+        val rating = attrs.optString("contentRating", attrs.optString("content_rating"))
+            .lowercase(Locale.ROOT)
+        if (rating in setOf("suggestive", "erotica", "pornographic", "mature", "adult")) return true
     }
     return false
 }
