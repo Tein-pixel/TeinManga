@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 const Color bg = Color(0xFF080D16);
 const Color panel = Color(0xFF111A29);
@@ -151,6 +152,7 @@ class SeriesItem {
     this.source = 'MangaBaka',
     this.availableTranslatedLanguages = const <String>[],
     this.mangaBakaId,
+    this.publisherUrl = '',
   });
 
   final int id;
@@ -167,6 +169,7 @@ class SeriesItem {
   final String source;
   final List<String> availableTranslatedLanguages;
   final int? mangaBakaId;
+  final String publisherUrl;
 
   factory SeriesItem.fromJson(Map<String, dynamic> json) {
     final coverData = json['cover'] is Map
@@ -206,7 +209,7 @@ class SeriesItem {
       rating: ratingValue is num ? ratingValue.toDouble() : null,
       author: authors.map((e) => e.toString()).where((e) => e.isNotEmpty).take(2).join(', '),
       language: _firstText([json['original_language'], 'unknown']),
-      contentRating: _firstText([json['content_rating'], 'safe']),
+      contentRating: _firstText([json['content_rating'], 'unknown']).toLowerCase(),
       source: 'MangaBaka',
     );
   }
@@ -245,6 +248,7 @@ class SeriesItem {
         : entry.toString()).where((name) => name.trim().isNotEmpty).take(2).join(', ');
     final ratingValue = json['rating'];
     final hasRestrictedTags = _hasRestrictedTags(json['tags']);
+    final publisherUrl = _extractPublisherUrl(json['links']);
 
     return SeriesItem(
       id: _toInt(json['id']),
@@ -270,9 +274,10 @@ class SeriesItem {
       rating: ratingValue is num ? ratingValue.toDouble() : null,
       author: authorNames,
       language: language,
-      contentRating: hasRestrictedTags ? 'blocked' : _firstText([json['content_rating'], 'safe']),
+      contentRating: hasRestrictedTags ? 'blocked' : _firstText([json['content_rating'], 'unknown']).toLowerCase(),
       source: 'MangaBaka',
       mangaBakaId: _toInt(json['id']) > 0 ? _toInt(json['id']) : null,
+      publisherUrl: publisherUrl,
     );
   }
 
@@ -310,7 +315,7 @@ class SeriesItem {
           .take(2)
           .join(', '),
       language: 'ja',
-      contentRating: 'safe',
+      contentRating: 'unknown',
       source: 'Jikan / MyAnimeList',
     );
   }
@@ -390,7 +395,7 @@ class SeriesItem {
       rating: null,
       author: authors.take(2).join(', '),
       language: language,
-      contentRating: hasRestrictedTags ? 'blocked' : (attributes['contentRating']?.toString() ?? 'safe'),
+      contentRating: hasRestrictedTags ? 'blocked' : _firstText([attributes['contentRating'], 'unknown']).toLowerCase(),
       source: 'MangaDex',
       availableTranslatedLanguages: availableLanguages,
     );
@@ -407,11 +412,12 @@ class SeriesItem {
         rating: json['rating'] is num ? (json['rating'] as num).toDouble() : null,
         author: _firstText([json['author']]),
         language: _firstText([json['language']]),
-        contentRating: _firstText([json['contentRating'], 'safe']),
+        contentRating: _firstText([json['contentRating'], 'unknown']).toLowerCase(),
         source: _firstText([json['source'], 'MangaBaka']),
         availableTranslatedLanguages: (json['availableTranslatedLanguages'] as List?)
             ?.whereType<String>().toList() ?? const <String>[],
         mangaBakaId: json['mangaBakaId'] is num ? (json['mangaBakaId'] as num).toInt() : null,
+        publisherUrl: _firstText([json['publisherUrl']]),
       );
 
   Map<String, dynamic> toMap() => {
@@ -429,7 +435,27 @@ class SeriesItem {
         'source': source,
         'availableTranslatedLanguages': availableTranslatedLanguages,
         'mangaBakaId': mangaBakaId,
+        'publisherUrl': publisherUrl,
       };
+}
+
+
+String _extractPublisherUrl(dynamic rawLinks) {
+  if (rawLinks is! List) return '';
+  for (final raw in rawLinks) {
+    if (raw is! Map || raw['type']?.toString().toLowerCase() != 'publisher') {
+      continue;
+    }
+    final candidate = Uri.tryParse(_firstText([raw['url']]));
+    if (candidate == null ||
+        candidate.scheme != 'https' ||
+        candidate.host.isEmpty ||
+        candidate.userInfo.isNotEmpty) {
+      continue;
+    }
+    return candidate.toString();
+  }
+  return '';
 }
 
 String _firstText(List<dynamic> values) {
@@ -459,8 +485,9 @@ int _stableId(String value) {
 bool _hasRestrictedTags(dynamic raw) {
   if (raw is! List) return false;
   const blocked = {
-    'ecchi', 'hentai', 'erotica', 'adult', 'mature',
-    'gore', 'graphic violence', 'sexual violence', 'sexual abuse',
+    'ecchi', 'hentai', 'erotica', 'adult', 'mature', 'suggestive',
+    'pornographic', 'nudity', 'sexual content', 'sexual violence',
+    'sexual abuse', 'gore', 'graphic violence',
   };
 
   String normalize(dynamic value) {
@@ -552,6 +579,94 @@ class _CatalogCacheEntry {
   final DateTime savedAt;
 }
 
+
+class RespectfulHttp {
+  static Future<http.Response> get(
+    http.Client client,
+    Uri uri, {
+    required Map<String, String> headers,
+    Duration timeout = const Duration(seconds: 8),
+  }) async {
+    for (var attempt = 0; attempt < 2; attempt++) {
+      final response = await client.get(uri, headers: headers).timeout(timeout);
+      final retryable = response.statusCode == 429 ||
+          response.statusCode == 502 ||
+          response.statusCode == 503 ||
+          response.statusCode == 504;
+      if (!retryable || attempt == 1) return response;
+
+      final rawRetryAfter = response.headers['retry-after'];
+      final retryAfter = int.tryParse(rawRetryAfter ?? '');
+      if (retryAfter != null && (retryAfter < 0 || retryAfter > 3)) {
+        return response;
+      }
+      if (rawRetryAfter != null && retryAfter == null) {
+        return response;
+      }
+      final delay = retryAfter == null
+          ? const Duration(milliseconds: 650)
+          : Duration(seconds: retryAfter);
+      await Future<void>.delayed(delay);
+    }
+    throw StateError('Permintaan tidak selesai.');
+  }
+}
+
+abstract interface class CatalogSourceAdapter {
+  String get id;
+
+  Future<List<SeriesItem>> search({
+    required String query,
+    required List<String> types,
+    required String sortBy,
+    required int page,
+  });
+}
+
+class MangaDexCatalogAdapter implements CatalogSourceAdapter {
+  const MangaDexCatalogAdapter();
+
+  @override
+  String get id => 'mangadex';
+
+  @override
+  Future<List<SeriesItem>> search({
+    required String query,
+    required List<String> types,
+    required String sortBy,
+    required int page,
+  }) {
+    return CatalogApi._fetchMangaDex(
+      query: query,
+      types: types,
+      sortBy: sortBy,
+      page: page,
+    );
+  }
+}
+
+class MangaBakaCatalogAdapter implements CatalogSourceAdapter {
+  const MangaBakaCatalogAdapter();
+
+  @override
+  String get id => 'mangabaka';
+
+  @override
+  Future<List<SeriesItem>> search({
+    required String query,
+    required List<String> types,
+    required String sortBy,
+    required int page,
+  }) {
+    return CatalogApi._fetchMangaBakaV2(
+      query: query,
+      types: types,
+      sortBy: sortBy,
+      page: page,
+    );
+  }
+}
+
 class CatalogApi {
   static bool testMode = false;
   static final http.Client _client = http.Client();
@@ -562,6 +677,8 @@ class CatalogApi {
   static const Duration _diskMaxAge = Duration(days: 5);
   static final Map<String, _CatalogCacheEntry> _cache = {};
   static final Map<String, Future<List<SeriesItem>>> _inFlight = {};
+  static final Map<String, bool> _lastSourceHealth = {};
+  static Map<String, bool> get lastSourceHealth => Map.unmodifiable(_lastSourceHealth);
 
   static String _diskKey(String cacheKey) =>
       'catalog_cache_' + _stableId(cacheKey).toString();
@@ -694,23 +811,36 @@ class CatalogApi {
     required String sortBy,
     required int page,
   }) async {
+    const adapters = <CatalogSourceAdapter>[
+      MangaDexCatalogAdapter(),
+      MangaBakaCatalogAdapter(),
+    ];
     var successCount = 0;
-    Future<List<SeriesItem>> attempt(Future<List<SeriesItem>> Function() request) async {
+    final sourceHealth = <String, bool>{};
+
+    Future<List<SeriesItem>> attempt(CatalogSourceAdapter adapter) async {
       try {
-        final result = await request();
+        final result = await adapter.search(
+          query: query,
+          types: types,
+          sortBy: sortBy,
+          page: page,
+        );
+        sourceHealth[adapter.id] = true;
         successCount++;
         return result;
       } catch (_) {
+        sourceHealth[adapter.id] = false;
         return const <SeriesItem>[];
       }
     }
 
-    // Two documented catalogue sources run concurrently. Jikan is deliberately
-    // not on the first-load path because its public API is rate-limited.
-    final batches = await Future.wait<List<SeriesItem>>([
-      attempt(() => _fetchMangaDex(query: query, types: types, sortBy: sortBy, page: page)),
-      attempt(() => _fetchMangaBakaV2(query: query, types: types, sortBy: sortBy, page: page)),
-    ]);
+    final batches = await Future.wait<List<SeriesItem>>(
+      adapters.map(attempt),
+    );
+    _lastSourceHealth
+      ..clear()
+      ..addAll(sourceHealth);
 
     if (successCount == 0) {
       throw Exception('Sumber katalog tidak merespons. Data tersimpan tetap dapat dibuka; coba segarkan lagi.');
@@ -753,6 +883,7 @@ class CatalogApi {
                     ? primary.availableTranslatedLanguages
                     : supplement.availableTranslatedLanguages,
             mangaBakaId: primary.mangaBakaId ?? supplement.mangaBakaId,
+            publisherUrl: primary.publisherUrl.isNotEmpty ? primary.publisherUrl : supplement.publisherUrl,
           );
           seenIds.add(item.id);
           continue;
@@ -793,12 +924,15 @@ class CatalogApi {
     }
 
     final uri = Uri.parse('https://api.mangabaka.org/v2/series/search?${params.join('&')}');
-    final response = await _client
-        .get(uri, headers: const {
-          'Accept': 'application/json',
-          'User-Agent': 'ManhwaKu/2.6 Android',
-        })
-        .timeout(_providerTimeout);
+    final response = await RespectfulHttp.get(
+      _client,
+      uri,
+      headers: const {
+        'Accept': 'application/json',
+        'User-Agent': 'ManhwaKu/2.8 (Android; catalog)',
+      },
+      timeout: _providerTimeout,
+    );
     if (response.statusCode != 200) {
       throw Exception('MangaBaka HTTP ${response.statusCode}');
     }
@@ -853,12 +987,15 @@ class CatalogApi {
     if (languages.isEmpty) return const <SeriesItem>[];
 
     final uri = Uri.parse('https://api.mangadex.org/manga?${params.join('&')}');
-    final response = await _client
-        .get(uri, headers: const {
-          'Accept': 'application/json',
-          'User-Agent': 'ManhwaKu/2.6 (Android; safe-catalog)',
-        })
-        .timeout(_providerTimeout);
+    final response = await RespectfulHttp.get(
+      _client,
+      uri,
+      headers: const {
+        'Accept': 'application/json',
+        'User-Agent': 'ManhwaKu/2.8 (Android; safe-catalog)',
+      },
+      timeout: _providerTimeout,
+    );
     if (response.statusCode != 200) {
       throw Exception('MangaDex HTTP ${response.statusCode}');
     }
@@ -1122,12 +1259,15 @@ class MangaDexChapterApi {
     final uri = Uri.parse(
       'https://api.mangadex.org/manga/' + mangaId + '/feed?' + params.join('&'),
     );
-    final response = await _client
-        .get(uri, headers: const {
-          'Accept': 'application/json',
-          'User-Agent': 'ManhwaKu/2.6 (safe reader)',
-        })
-        .timeout(const Duration(seconds: 12));
+    final response = await RespectfulHttp.get(
+      _client,
+      uri,
+      headers: const {
+        'Accept': 'application/json',
+        'User-Agent': 'ManhwaKu/2.8 (safe reader)',
+      },
+      timeout: const Duration(seconds: 12),
+    );
     if (response.statusCode != 200) {
       throw Exception(
         'MangaDex gagal memuat chapter (' + response.statusCode.toString() + ').',
@@ -1386,8 +1526,11 @@ class _MangaDexChapterPageState extends State<MangaDexChapterPage> {
                       ? ErrorPanel(
                           icon: Icons.menu_book_outlined,
                           title: 'Belum ada chapter',
-                          message: 'Tidak ada chapter aman yang tersedia di MangaDex.',
+                          message: 'Belum ada chapter aman dari sumber yang terhubung.',
                           onRetry: () => _load(reset: true),
+                          secondary: widget.item.publisherUrl.isNotEmpty
+                              ? _publisherButton(widget.item)
+                              : null,
                         )
                       : ListView.separated(
                           padding: const EdgeInsets.fromLTRB(16, 3, 16, 18),
@@ -3018,7 +3161,8 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
 
   Future<void> _enrichMetadata() async {
     if (widget.item.description != 'Deskripsi belum tersedia.' &&
-        widget.item.cover.isNotEmpty) return;
+        widget.item.cover.isNotEmpty &&
+        widget.item.publisherUrl.isNotEmpty) return;
 
     if (mounted) setState(() => _enriching = true);
     try {
@@ -3043,6 +3187,7 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
           source: base.source,
           availableTranslatedLanguages: base.availableTranslatedLanguages,
           mangaBakaId: base.mangaBakaId ?? full.mangaBakaId ?? full.id,
+          publisherUrl: base.publisherUrl.isNotEmpty ? base.publisherUrl : full.publisherUrl,
         );
       });
     } catch (_) {
@@ -3091,6 +3236,7 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
               source: current.source,
               availableTranslatedLanguages: current.availableTranslatedLanguages,
               mangaBakaId: current.mangaBakaId,
+              publisherUrl: current.publisherUrl.isNotEmpty ? current.publisherUrl : match.publisherUrl,
             );
           }
         }
@@ -3264,6 +3410,37 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
     );
   }
 
+
+  Widget _publisherButton(SeriesItem item) {
+    final url = Uri.tryParse(item.publisherUrl);
+    if (url == null ||
+        url.scheme != 'https' ||
+        url.host.isEmpty ||
+        url.userInfo.isNotEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: OutlinedButton.icon(
+        onPressed: () async {
+          final ok = await launchUrl(url, mode: LaunchMode.externalApplication);
+          if (!ok && mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Tautan penerbit tidak dapat dibuka')),
+            );
+          }
+        },
+        icon: const Icon(Icons.open_in_new_rounded, size: 17),
+        label: const Text('Buka penerbit'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: accent,
+          side: const BorderSide(color: stroke),
+          minimumSize: const Size.fromHeight(46),
+        ),
+      ),
+    );
+  }
+
   Widget _buildInfoTab(SeriesItem item) {
     final description = item.description.trim().isEmpty ||
             item.description == 'Deskripsi belum tersedia.'
@@ -3288,6 +3465,7 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
         if (item.language != 'unknown' && item.language.isNotEmpty)
           _InfoRow(label: 'Bahasa asli', value: item.language.toUpperCase()),
         if (item.source.isNotEmpty) _InfoRow(label: 'Metadata', value: item.source),
+        if (item.publisherUrl.isNotEmpty) _publisherButton(item),
       ],
     );
   }
@@ -3299,12 +3477,13 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
       );
     }
     if (_mangaDexId != null && _chapterItem != null) {
-      return MangaDexChapterPage(item: _chapterItem!, mangaId: _mangaDexId!);
+      return MangaDexChapterPage(item: item, mangaId: _mangaDexId!);
     }
-    return const ErrorPanel(
+    return ErrorPanel(
       icon: Icons.menu_book_outlined,
       title: 'Chapter belum tersedia',
       message: 'Belum ada sumber chapter yang cocok untuk judul ini.',
+      secondary: item.publisherUrl.isNotEmpty ? _publisherButton(item) : null,
     );
   }
 
@@ -3458,7 +3637,7 @@ class AboutPage extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             const Text('ManhwaKu', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
-            const Text('Versi 2.7.0', style: TextStyle(color: muted, fontSize: 11)),
+            const Text('Versi 2.8.0', style: TextStyle(color: muted, fontSize: 11)),
             const SizedBox(height: 14),
             const Text(
               'Katalog penemuan komik dan novel dari beberapa sumber metadata publik. '
@@ -3472,23 +3651,18 @@ class AboutPage extends StatelessWidget {
             const SizedBox(height: 10),
             _SourceCredit(
               title: 'MangaBaka',
-              url: 'https://mangabaka.org/developers',
-              note: 'Metadata • penggunaan personal/non-komersial • atribusi wajib',
+              url: 'https://mangabaka.org/about/data-license',
+              note: 'Metadata • CC BY-NC-SA 4.0 • ketentuan data pihak ketiga berlaku',
             ),
             _SourceCredit(
               title: 'MangaDex',
               url: 'https://gitlab.com/mangadex-pub/mangadex-api-docs',
               note: 'Metadata katalog • kebijakan penggunaan dan atribusi berlaku',
             ),
-            _SourceCredit(
-              title: 'Jikan / MyAnimeList',
-              url: 'https://docs.api.jikan.moe/',
-              note: 'Metadata manga publik • tanpa API key',
-            ),
             const SizedBox(height: 14),
             const Text(
-              'ManhwaKu tidak berafiliasi dengan penyedia data tersebut. '
-              'Judul, sampul, dan deskripsi tetap dimiliki pemegang hak masing-masing.',
+              'Chapter hanya tersedia jika sumber mendukung akses. '
+              'Rating yang hilang atau tidak jelas tidak masuk katalog aman.',
               style: TextStyle(color: muted, fontSize: 10, height: 1.5),
             ),
           ],

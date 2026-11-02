@@ -9,14 +9,16 @@ Flutter Android app for Android 10+ (application ID: com.manhwaku.reader).
 - Series details with available cover, synopsis, author, status, and score metadata.
 - WEBTOON Indonesia featured series shortcuts and a direct in-app view of its popular ranking.
 - On-device favourites and reading history using SharedPreferences.
-- Source-page WebView with loading state, retry, navigation and external-browser fallback.
+- Native MangaDex chapter list and image reader for safe-rated supported titles.
+- HTTPS publisher links from MangaBaka metadata when explicitly tagged as publisher.
+- Modular source adapters, request deduplication, memory/disk cache and bounded retry for transient API errors.
 
 ## Catalogue and reading
 Catalogue data is fetched online from the public MangaBaka API. The client requests the safe content rating and exposes additional result pages with the API's documented 25-item page limit. The client does not apply the English-only licensed-series filter, because MangaBaka documents that its licence flag currently tracks English editions only. The API is a metadata catalogue, not a chapter file host; coverage is not exhaustive and changes as providers update their data.
 
 ManhwaKu does not download, scrape, bundle, or redistribute third-party chapters. Reading links, regional availability, login requirements and paid/free access remain controlled by each publisher or platform. WEBTOON titles open through their official WEBTOON pages.
 
-MangaBaka data is subject to its non-commercial licence and attribution requirements. Third-party fields remain subject to their providers' terms. See https://mangabaka.org/developers/concepts/license-and-attribution.
+MangaBaka data is subject to CC BY-NC-SA 4.0 and attribution requirements; third-party fields have separate, more restrictive terms. See https://mangabaka.org/about/data-license.
 
 ## Build
 GitHub Actions runs Flutter analysis and widget tests, builds a release APK, and uploads the ManhwaKu-online-reader-release artifact.
@@ -24,7 +26,7 @@ GitHub Actions runs Flutter analysis and widget tests, builds a release APK, and
 
 ## Catalog sources (v2.4)
 
-ManhwaKu aggregates safe-rated public metadata from MangaBaka, MangaDex, and Jikan/MyAnimeList. Catalog responses are restricted to safe-rated entries. The app does not scrape third-party websites or embed third-party pages. Source terms and attribution requirements apply; MangaBaka data is for personal/non-commercial use unless separately licensed. The public catalog endpoints do not require end-user API keys.
+ManhwaKu aggregates metadata from MangaBaka and MangaDex. Only entries with an explicit safe rating are displayed in the safe catalogue. The app does not scrape third-party websites or embed third-party pages. Source terms and attribution requirements apply; MangaBaka data is for personal/non-commercial use unless separately licensed. The public catalog endpoints do not require end-user API keys.
 
 
 ## v2.5.0 updates
@@ -58,3 +60,15 @@ Provider limits and licenses remain in force. MangaBaka data is personal/non-com
 - Chapter feed pages are cached in memory for two minutes to reduce repeat waits; manually selected language remains respected.
 - Explicit refresh continues to bypass stale catalog metadata.
 - Regression tests cover v2 multilingual parsing, source-synopsis fallback, tag filtering and local reading-status persistence.
+
+
+## v2.8.0 reliability and source architecture
+
+- Live catalogue providers use independent adapter classes for the documented MangaDex and MangaBaka public APIs.
+- AniList is intentionally not integrated because its current API terms prohibit use in competing, non-complementary manga list/tracker services. Jikan remains an inactive mapping helper and is not represented as a live source.
+- Missing content ratings now become `unknown`, never `safe`; unknown and restricted records are excluded from the safe catalogue.
+- The MangaBaka full-record lookup may contribute a publisher URL only when the record explicitly marks it as `publisher` and the URL uses HTTPS.
+- Transient 429/502/503/504 responses receive at most one bounded retry. Long or unrecognized `Retry-After` values are not overridden.
+- The chapter screen offers an available publisher page when the supported chapter source has no safe chapters. It does not invent counts or silently substitute a different series.
+- MangaDex attribution, scanlation-group credit, removal requests, and no-ads/no-paid-services requirements remain in force.
+

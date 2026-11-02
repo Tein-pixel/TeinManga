@@ -82,6 +82,51 @@ void main() {
     expect(item.contentRating, 'blocked');
   });
 
+
+  test('MangaBaka records without a rating are not considered safe', () {
+    final item = SeriesItem.fromMangaBakaV2({
+      'id': 124,
+      'titles': [
+        {'language': 'en', 'title': 'Unrated sample', 'is_primary': true},
+      ],
+      'type': 'manga',
+      'original_language': 'ja',
+    });
+    expect(item.contentRating, 'unknown');
+  });
+
+  test('Publisher URLs must be HTTPS and explicitly marked publisher', () {
+    final item = SeriesItem.fromMangaBakaV2({
+      'id': 125,
+      'titles': [
+        {'language': 'en', 'title': 'Publisher sample', 'is_primary': true},
+      ],
+      'type': 'manga',
+      'original_language': 'ja',
+      'content_rating': 'safe',
+      'links': [
+        {'type': 'webplatform', 'url': 'https://reader.example/series/1'},
+        {'type': 'publisher', 'url': 'http://publisher.example/work/1'},
+        {'type': 'publisher', 'url': 'https://publisher.example/work/1'},
+      ],
+    });
+    expect(item.publisherUrl, 'https://publisher.example/work/1');
+  });
+
+  test('MangaDex records without an explicit rating remain unknown', () {
+    final item = SeriesItem.fromMangaDex({
+      'id': '11111111-2222-4333-8444-555555555555',
+      'attributes': {
+        'title': {'en': 'Unrated MangaDex sample'},
+        'description': {},
+        'originalLanguage': 'ja',
+        'availableTranslatedLanguages': ['en'],
+      },
+      'relationships': [],
+    });
+    expect(item.contentRating, 'unknown');
+  });
+
   test('Reading status is exclusive and persists locally', () async {
     final item = SeriesItem(
       id: 77,
