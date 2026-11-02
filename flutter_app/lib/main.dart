@@ -7,13 +7,14 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
-const Color bg = Color(0xFF101010);
-const Color panel = Color(0xFF1A1A1A);
-const Color panel2 = Color(0xFF242424);
-const Color accent = Color(0xFF00D084);
-const Color ink = Color(0xFFF7F7F7);
-const Color muted = Color(0xFF9A9A9A);
-const Color stroke = Color(0xFF303030);
+const Color bg = Color(0xFF080D16);
+const Color panel = Color(0xFF111A29);
+const Color panel2 = Color(0xFF19263A);
+const Color accent = Color(0xFF36C5F0);
+const Color accentAlt = Color(0xFF9B8CFF);
+const Color ink = Color(0xFFF4F7FC);
+const Color muted = Color(0xFF8F9BAD);
+const Color stroke = Color(0xFF26364B);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -60,11 +61,79 @@ class ManhwaKuApp extends StatelessWidget {
         ),
         fontFamily: 'sans-serif',
       ),
-      home: const AppShell(),
+      home: const StartupGate(),
     );
   }
 }
 
+
+
+class StartupGate extends StatefulWidget {
+  const StartupGate({super.key});
+
+  @override
+  State<StartupGate> createState() => _StartupGateState();
+}
+
+class _StartupGateState extends State<StartupGate> {
+  bool _ready = false;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer(const Duration(milliseconds: 520), () {
+      if (mounted) setState(() => _ready = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_ready) return const AppShell();
+    return Scaffold(
+      backgroundColor: bg,
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 76,
+              height: 76,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [accent, Color(0xFF6488FF)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: accent.withValues(alpha: .22),
+                    blurRadius: 28,
+                    spreadRadius: 1,
+                  ),
+                ],
+              ),
+              child: const Icon(Icons.auto_stories_rounded, color: Color(0xFF06111C), size: 40),
+            ),
+            const SizedBox(height: 22),
+            const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2.4, color: accent),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class SeriesItem {
   const SeriesItem({
@@ -285,7 +354,7 @@ class SeriesItem {
 
     final id = _firstText([json['id']]);
     final cover = coverFile.isEmpty ? '' :
-        'https://uploads.mangadex.org/covers/$id/$coverFile.256.jpg';
+        'https://uploads.mangadex.org/covers/$id/$coverFile.512.jpg';
     final hasRestrictedTags = _hasRestrictedTags(attributes['tags']);
     final availableLanguages = attributes['availableTranslatedLanguages'] is List
         ? (attributes['availableTranslatedLanguages'] as List)
@@ -1019,7 +1088,8 @@ class MangaDexChapterApi {
       throw const FormatException('ID MangaDex tidak valid.');
     }
     final normalizedLanguage = language.toLowerCase();
-    if (!RegExp(r'^[a-z]{2}(?:-[a-z]{2})?$').hasMatch(normalizedLanguage)) {
+    if (normalizedLanguage != 'all' &&
+        !RegExp(r'^[a-z]{2}(?:-[a-z]{2})?$').hasMatch(normalizedLanguage)) {
       throw const FormatException('Kode bahasa chapter tidak valid.');
     }
     if (offset < 0) {
@@ -1035,12 +1105,22 @@ class MangaDexChapterApi {
       return cached;
     }
 
+    final params = <String>[
+      'limit=100',
+      'offset=' + offset.toString(),
+      'contentRating%5B%5D=safe',
+      'includes%5B%5D=scanlation_group',
+      'order%5Bvolume%5D=desc',
+      'order%5Bchapter%5D=desc',
+    ];
+    if (normalizedLanguage != 'all') {
+      params.insert(
+        2,
+        'translatedLanguage%5B%5D=' + Uri.encodeQueryComponent(normalizedLanguage),
+      );
+    }
     final uri = Uri.parse(
-      'https://api.mangadex.org/manga/' + mangaId +
-      '/feed?limit=100&offset=' + offset.toString() +
-      '&translatedLanguage%5B%5D=' + Uri.encodeQueryComponent(normalizedLanguage) +
-      '&contentRating%5B%5D=safe&includes%5B%5D=scanlation_group' +
-      '&order%5Bvolume%5D=desc&order%5Bchapter%5D=desc',
+      'https://api.mangadex.org/manga/' + mangaId + '/feed?' + params.join('&'),
     );
     final response = await _client
         .get(uri, headers: const {
@@ -1119,6 +1199,7 @@ class MangaDexChapterApi {
   }
 }
 
+
 class MangaDexChapterPage extends StatefulWidget {
   const MangaDexChapterPage({
     super.key,
@@ -1135,7 +1216,7 @@ class MangaDexChapterPage extends StatefulWidget {
 
 class _MangaDexChapterPageState extends State<MangaDexChapterPage> {
   static const int _pageSize = 100;
-  late String _language;
+  String _language = 'all';
   final List<MangaDexChapter> _chapters = [];
   int _requestId = 0;
   bool _loading = true;
@@ -1144,45 +1225,46 @@ class _MangaDexChapterPageState extends State<MangaDexChapterPage> {
   String? _error;
 
   List<String> get _availableLanguages {
-    final languages = <String>[];
-    for (final value in widget.item.availableTranslatedLanguages) {
-      final normalized = value.toLowerCase();
-      if (RegExp(r'^[a-z]{2}(?:-[a-z]{2})?$').hasMatch(normalized) &&
-          !languages.contains(normalized)) {
-        languages.add(normalized);
+    final values = <String>['all'];
+    for (final language in [
+      ...widget.item.availableTranslatedLanguages,
+      widget.item.language,
+      ..._chapters.map((chapter) => chapter.language),
+    ]) {
+      final value = language.toLowerCase();
+      if (value != 'unknown' &&
+          RegExp(r'^[a-z]{2}(?:-[a-z]{2})?$').hasMatch(value) &&
+          !values.contains(value)) {
+        values.add(value);
       }
     }
-    final original = widget.item.language.toLowerCase();
-    if (original != 'unknown' &&
-        RegExp(r'^[a-z]{2}(?:-[a-z]{2})?$').hasMatch(original) &&
-        !languages.contains(original)) {
-      languages.add(original);
-    }
-    if (languages.isEmpty) return const ['id', 'en', 'ko', 'ja', 'zh'];
-    return languages;
+    return values;
   }
 
-  String _initialLanguage() {
-    final languages = _availableLanguages;
-    if (languages.contains('id')) return 'id';
-    if (languages.contains(widget.item.language.toLowerCase())) {
-      return widget.item.language.toLowerCase();
-    }
-    if (languages.contains('en')) return 'en';
-    return languages.first;
+  String _languageLabel(String code) {
+    const labels = {
+      'all': 'Semua bahasa',
+      'id': 'Indonesia',
+      'en': 'English',
+      'ko': '한국어',
+      'ja': '日本語',
+      'zh': '中文',
+      'zh-hk': '中文 (HK)',
+      'zh-mo': '中文 (MO)',
+      'es': 'Español',
+      'es-la': 'Español (LatAm)',
+      'pt-br': 'Português (BR)',
+    };
+    return labels[code] ?? code.toUpperCase();
   }
 
   @override
   void initState() {
     super.initState();
-    _language = _initialLanguage();
-    _load(reset: true, allowAutoFallback: true);
+    _load(reset: true);
   }
 
-  Future<void> _load({
-    bool reset = false,
-    bool allowAutoFallback = false,
-  }) async {
+  Future<void> _load({bool reset = false}) async {
     if (!reset && (_loading || _loadingMore || !_hasMore)) return;
     final request = ++_requestId;
     final offset = reset ? 0 : _chapters.length;
@@ -1199,57 +1281,13 @@ class _MangaDexChapterPageState extends State<MangaDexChapterPage> {
     });
 
     try {
-      var resolvedLanguage = _language;
-      var fetched = await MangaDexChapterApi.fetchChapters(
+      final fetched = await MangaDexChapterApi.fetchChapters(
         widget.mangaId,
-        language: resolvedLanguage,
+        language: _language,
         offset: offset,
       );
-
-      // On the first open only, an empty selected-language feed tries the
-      // original language and English from the title's published translations.
-      if (reset && allowAutoFallback && fetched.isEmpty) {
-        final candidates = <String>[];
-        final preferred = [
-          widget.item.language.toLowerCase(),
-          'en',
-          'id',
-        ];
-        for (final language in preferred) {
-          if (language != resolvedLanguage &&
-              _availableLanguages.contains(language) &&
-              !candidates.contains(language)) {
-            candidates.add(language);
-          }
-        }
-
-        final fallbackResults = await Future.wait(
-          candidates.take(2).map((language) async {
-            try {
-              final chapters = await MangaDexChapterApi.fetchChapters(
-                widget.mangaId,
-                language: language,
-                offset: 0,
-              );
-              return MapEntry(language, chapters);
-            } catch (_) {
-              return MapEntry(language, const <MangaDexChapter>[]);
-            }
-          }),
-        );
-
-        for (final result in fallbackResults) {
-          if (result.value.isNotEmpty) {
-            resolvedLanguage = result.key;
-            fetched = result.value;
-            break;
-          }
-        }
-      }
-
       if (!mounted || request != _requestId) return;
       setState(() {
-        _language = resolvedLanguage;
         final seen = _chapters.map((chapter) => chapter.id).toSet();
         for (final chapter in fetched) {
           if (seen.add(chapter.id)) _chapters.add(chapter);
@@ -1269,7 +1307,7 @@ class _MangaDexChapterPageState extends State<MangaDexChapterPage> {
   }
 
   void _changeLanguage(String language) {
-    if (!_availableLanguages.contains(language)) return;
+    if (!_availableLanguages.contains(language) || language == _language) return;
     setState(() => _language = language);
     _load(reset: true);
   }
@@ -1282,119 +1320,138 @@ class _MangaDexChapterPageState extends State<MangaDexChapterPage> {
     );
   }
 
-  String _languageLabel(String code) {
-    const labels = {
-      'id': 'Indonesia',
-      'en': 'English',
-      'ko': '한국어',
-      'ja': '日本語',
-      'zh': '中文',
-      'zh-hk': '中文 (Hong Kong)',
-      'zh-mo': '中文 (Macau)',
-      'es': 'Español',
-      'es-la': 'Español (LatAm)',
-      'pt-br': 'Português (Brasil)',
-    };
-    return labels[code] ?? code.toUpperCase();
-  }
-
   @override
-  Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(
-          title: const Text('Daftar chapter'),
-          actions: [
-            PopupMenuButton<String>(
-              tooltip: 'Bahasa chapter',
-              initialValue: _language,
-              onSelected: _changeLanguage,
-              itemBuilder: (context) => _availableLanguages
-                  .map((language) => PopupMenuItem(
-                        value: language,
-                        child: Text(_languageLabel(language)),
-                      ))
-                  .toList(),
-              icon: const Icon(Icons.translate_rounded),
-            ),
-            IconButton(
-              tooltip: 'Muat ulang',
-              onPressed: () => _load(reset: true),
-              icon: const Icon(Icons.refresh_rounded),
-            ),
-          ],
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 13, 10, 9),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _chapters.isEmpty
+                      ? 'Chapter'
+                      : 'Chapter ' + _chapters.length.toString() + (_hasMore ? '+' : ''),
+                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
+                ),
+              ),
+              PopupMenuButton<String>(
+                tooltip: 'Bahasa',
+                initialValue: _language,
+                onSelected: _changeLanguage,
+                itemBuilder: (context) => _availableLanguages
+                    .map((language) => PopupMenuItem(
+                          value: language,
+                          child: Text(_languageLabel(language)),
+                        ))
+                    .toList(),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                  decoration: BoxDecoration(
+                    color: panel,
+                    borderRadius: BorderRadius.circular(22),
+                    border: Border.all(color: stroke),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.translate_rounded, color: accent, size: 16),
+                      const SizedBox(width: 7),
+                      Text(_languageLabel(_language), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                      const SizedBox(width: 3),
+                      const Icon(Icons.keyboard_arrow_down_rounded, size: 17, color: muted),
+                    ],
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Muat ulang',
+                onPressed: () => _load(reset: true),
+                icon: const Icon(Icons.refresh_rounded),
+              ),
+            ],
+          ),
         ),
-        body: _loading && _chapters.isEmpty
-            ? const Center(child: CircularProgressIndicator(color: accent))
-            : _error != null && _chapters.isEmpty
-                ? ErrorPanel(
-                    title: 'Chapter gagal dimuat',
-                    message: _error!,
-                    onRetry: () => _load(reset: true),
-                  )
-                : _chapters.isEmpty
-                    ? ErrorPanel(
-                        icon: Icons.menu_book_outlined,
-                        title: 'Chapter belum ditemukan',
-                        message: 'Tidak ada chapter berlabel aman dalam bahasa ' + _languageLabel(_language) + '. Coba bahasa lain yang tersedia pada menu bahasa.',
-                        onRetry: () => _load(reset: true),
-                      )
-                    : ListView.separated(
-                        padding: const EdgeInsets.all(14),
-                        itemCount: _chapters.length + (_hasMore || _loadingMore ? 1 : 0),
-                        separatorBuilder: (_, __) => const Divider(color: stroke, height: 1),
-                        itemBuilder: (context, index) {
-                          if (index >= _chapters.length) {
-                            return Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              child: Center(
-                                child: _loadingMore
-                                    ? const CircularProgressIndicator(color: accent)
-                                    : TextButton.icon(
-                                        onPressed: () => _load(),
-                                        icon: const Icon(Icons.expand_more_rounded),
-                                        label: const Text('Muat chapter lebih lama'),
-                                      ),
+        Expanded(
+          child: _loading && _chapters.isEmpty
+              ? const Center(child: CircularProgressIndicator(color: accent))
+              : _error != null && _chapters.isEmpty
+                  ? ErrorPanel(
+                      title: 'Chapter gagal dimuat',
+                      message: _error!,
+                      onRetry: () => _load(reset: true),
+                    )
+                  : _chapters.isEmpty
+                      ? ErrorPanel(
+                          icon: Icons.menu_book_outlined,
+                          title: 'Belum ada chapter',
+                          message: 'Tidak ada chapter aman yang tersedia di MangaDex.',
+                          onRetry: () => _load(reset: true),
+                        )
+                      : ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(16, 3, 16, 18),
+                          itemCount: _chapters.length + (_hasMore || _loadingMore ? 1 : 0),
+                          separatorBuilder: (_, __) => const Divider(color: stroke, height: 1),
+                          itemBuilder: (context, index) {
+                            if (index >= _chapters.length) {
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                child: Center(
+                                  child: _loadingMore
+                                      ? const CircularProgressIndicator(color: accent)
+                                      : TextButton.icon(
+                                          onPressed: () => _load(),
+                                          icon: const Icon(Icons.expand_more_rounded),
+                                          label: const Text('Muat lebih lama'),
+                                        ),
+                                ),
+                              );
+                            }
+                            final chapter = _chapters[index];
+                            final number = chapter.number.isEmpty
+                                ? 'Chapter'
+                                : 'Chapter ' + chapter.number;
+                            final detail = [
+                              _languageLabel(chapter.language),
+                              chapter.pageCount.toString() + ' halaman',
+                              if (chapter.scanlationGroup.isNotEmpty) chapter.scanlationGroup,
+                            ].join('  •  ');
+                            return ListTile(
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 2, vertical: 5),
+                              minVerticalPadding: 7,
+                              leading: SizedBox(
+                                width: 48,
+                                height: 62,
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(9),
+                                  child: SeriesCover(url: widget.item.cover),
+                                ),
                               ),
+                              title: Text(
+                                chapter.title.isEmpty ? number : number + '  ·  ' + chapter.title,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+                              ),
+                              subtitle: Padding(
+                                padding: const EdgeInsets.only(top: 5),
+                                child: Text(
+                                  detail,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(color: muted, fontSize: 10),
+                                ),
+                              ),
+                              trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 15, color: accent),
+                              onTap: () => _openChapter(chapter),
                             );
-                          }
-                          final chapter = _chapters[index];
-                          final number = chapter.number.isEmpty
-                              ? 'Chapter'
-                              : 'Chapter ' + chapter.number;
-                          return ListTile(
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            leading: Container(
-                              width: 42,
-                              height: 42,
-                              decoration: BoxDecoration(
-                                color: panel,
-                                borderRadius: BorderRadius.circular(11),
-                              ),
-                              alignment: Alignment.center,
-                              child: const Icon(Icons.menu_book_rounded, color: accent),
-                            ),
-                            title: Text(
-                              chapter.title.isEmpty ? number : number + ' • ' + chapter.title,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
-                            ),
-                            subtitle: Text(
-                              [
-                                if (chapter.volume.isNotEmpty) 'Vol. ' + chapter.volume,
-                                chapter.pageCount.toString() + ' halaman',
-                                if (chapter.scanlationGroup.isNotEmpty)
-                                  'Grup: ' + chapter.scanlationGroup,
-                              ].join(' • '),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: muted, fontSize: 10),
-                            ),
-                            trailing: const Icon(Icons.chevron_right_rounded, color: accent),
-                            onTap: () => _openChapter(chapter),
-                          );
-                        },
-                      ),
-      );
+                          },
+                        ),
+        ),
+      ],
+    );
+  }
 }
 
 class MangaDexReaderPage extends StatefulWidget {
@@ -1548,7 +1605,7 @@ class _MangaDexReaderPageState extends State<MangaDexReaderPage> {
               );
             }
             return PageView.builder(
-              reverse: widget.item.language == 'ja',
+              reverse: widget.chapter.language == 'ja',
               itemCount: pages.length,
               onPageChanged: (index) {
                 if (mounted) setState(() => _currentPage = index);
@@ -1871,7 +1928,6 @@ class _HomeTabState extends State<HomeTab> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text('ManhwaKu', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w900, letterSpacing: -.5)),
-                        Text('KOMIK • MANGA • NOVEL', style: TextStyle(color: muted, fontSize: 9, letterSpacing: 1.2, fontWeight: FontWeight.w700)),
                       ],
                     ),
                   ),
@@ -1925,34 +1981,6 @@ class _HomeTabState extends State<HomeTab> {
                   _QuickAction(icon: Icons.history_rounded, label: 'Riwayat', onTap: widget.onHistory),
                   _QuickAction(icon: Icons.local_fire_department_rounded, label: 'Trending', color: const Color(0xFFFFC857), onTap: widget.onExplore),
                 ],
-              ),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 2),
-              child: Container(
-                padding: const EdgeInsets.all(15),
-                decoration: BoxDecoration(
-                  color: panel,
-                  borderRadius: BorderRadius.circular(15),
-                  border: Border.all(color: stroke),
-                ),
-                child: const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('MULTI-SOURCE CATALOG', style: TextStyle(
-                      color: accent, fontSize: 9, letterSpacing: 1.3,
-                      fontWeight: FontWeight.w900,
-                    )),
-                    SizedBox(height: 7),
-                    Text('Manga • Manhwa • Manhua • Novel',
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
-                    SizedBox(height: 5),
-                    Text('Metadata disatukan dari MangaBaka, MangaDex, dan Jikan. Hasil dengan rating tidak aman disaring.',
-                      style: TextStyle(color: muted, fontSize: 10, height: 1.45)),
-                  ],
-                ),
               ),
             ),
           ),
@@ -2853,6 +2881,101 @@ class _LibraryTabState extends State<LibraryTab> {
       );
 }
 
+
+class MangaDexSeriesLookupApi {
+  static final http.Client _client = http.Client();
+  static final Map<String, SeriesItem> _cache = {};
+  static final Map<String, Future<SeriesItem?>> _inFlight = {};
+
+  static String _normalize(String value) {
+    final withoutArticle = value.trim().toLowerCase().replaceFirst(
+      RegExp(r'^(the|a|an)\s+'),
+      '',
+    );
+    return withoutArticle.replaceAll(RegExp(r'[^a-z0-9]'), '');
+  }
+
+  static String? idFromUrl(String url) {
+    final parts = Uri.tryParse(url)?.pathSegments ?? const <String>[];
+    final index = parts.indexOf('title');
+    if (index < 0 || index + 1 >= parts.length) return null;
+    final id = parts[index + 1];
+    return RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
+            .hasMatch(id)
+        ? id
+        : null;
+  }
+
+  static Future<SeriesItem?> findMatch(SeriesItem source) async {
+    final directId = idFromUrl(source.url);
+    if (source.source == 'MangaDex' && directId != null) return source;
+
+    final query = source.title.trim();
+    final key = _normalize(query);
+    if (key.length < 2 || key.length > 100) return null;
+    if (_cache.containsKey(key)) return _cache[key];
+    final pending = _inFlight[key];
+    if (pending != null) return pending;
+
+    final request = _search(query, key);
+    _inFlight[key] = request;
+    try {
+      return await request;
+    } finally {
+      _inFlight.remove(key);
+    }
+  }
+
+  static Future<SeriesItem?> _search(String query, String key) async {
+    try {
+      final uri = Uri.parse(
+        'https://api.mangadex.org/manga?limit=10&title=' +
+        Uri.encodeQueryComponent(query) +
+        '&contentRating%5B%5D=safe&includes%5B%5D=cover_art&includes%5B%5D=author&order%5Brelevance%5D=desc',
+      );
+      final response = await _client.get(uri, headers: const {
+        'Accept': 'application/json',
+        'User-Agent': 'ManhwaKu/2.7 (safe title match)',
+      }).timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) return null;
+
+      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+      if (decoded is! Map || decoded['data'] is! List) return null;
+      for (final raw in decoded['data'] as List) {
+        if (raw is! Map) continue;
+        final row = Map<String, dynamic>.from(raw);
+        final attributes = row['attributes'] is Map
+            ? Map<String, dynamic>.from(row['attributes'] as Map)
+            : <String, dynamic>{};
+        if (attributes['contentRating'] != 'safe' ||
+            _hasRestrictedTags(attributes['tags'])) {
+          continue;
+        }
+
+        final names = <String>[];
+        final titles = attributes['title'];
+        if (titles is Map) names.addAll(titles.values.map((value) => value.toString()));
+        final alternate = attributes['altTitles'];
+        if (alternate is List) {
+          for (final entry in alternate.whereType<Map>()) {
+            names.addAll(entry.values.map((value) => value.toString()));
+          }
+        }
+        if (!names.any((name) => _normalize(name) == key)) continue;
+
+        final item = SeriesItem.fromMangaDex(row);
+        final id = idFromUrl(item.url);
+        if (id == null || item.contentRating != 'safe' || item.cover.isEmpty) continue;
+        _cache[key] = item;
+        return item;
+      }
+    } catch (_) {
+      // A catalogue match is optional; never block the details screen.
+    }
+    return null;
+  }
+}
+
 class SeriesDetailsPage extends StatefulWidget {
   const SeriesDetailsPage({super.key, required this.item});
   final SeriesItem item;
@@ -2865,7 +2988,10 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
   bool _saved = false;
   bool _ready = false;
   bool _enriching = false;
+  bool _chapterLookup = true;
   late SeriesItem _displayItem;
+  SeriesItem? _chapterItem;
+  String? _mangaDexId;
   String _readingStatus = 'none';
 
   @override
@@ -2874,6 +3000,7 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
     _displayItem = widget.item;
     _loadSaved();
     _enrichMetadata();
+    _resolveChapterSource();
   }
 
   Future<void> _loadSaved() async {
@@ -2888,7 +3015,6 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
       _ready = true;
     });
   }
-
 
   Future<void> _enrichMetadata() async {
     if (widget.item.description != 'Deskripsi belum tersedia.' &&
@@ -2920,217 +3046,393 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
         );
       });
     } catch (_) {
-      // Detail metadata is optional; keep the initial fast page intact.
+      // Keep the initial page usable if enrichment is unavailable.
     } finally {
       if (mounted) setState(() => _enriching = false);
     }
   }
 
+  Future<void> _resolveChapterSource() async {
+    final directId = MangaDexSeriesLookupApi.idFromUrl(widget.item.url);
+    if (widget.item.source == 'MangaDex' && directId != null) {
+      if (mounted) {
+        setState(() {
+          _mangaDexId = directId;
+          _chapterItem = widget.item;
+          _chapterLookup = false;
+        });
+      }
+      return;
+    }
+
+    try {
+      final match = await MangaDexSeriesLookupApi.findMatch(widget.item);
+      if (!mounted) return;
+      setState(() {
+        if (match != null) {
+          _chapterItem = match;
+          _mangaDexId = MangaDexSeriesLookupApi.idFromUrl(match.url);
+          if (match.cover.isNotEmpty) {
+            final current = _displayItem;
+            final hasDescription = current.description.isNotEmpty &&
+                current.description != 'Deskripsi belum tersedia.';
+            _displayItem = SeriesItem(
+              id: current.id,
+              title: current.title,
+              type: current.type,
+              url: current.url,
+              cover: match.cover,
+              description: hasDescription ? current.description : match.description,
+              status: current.status,
+              rating: current.rating,
+              author: current.author.isNotEmpty ? current.author : match.author,
+              language: current.language,
+              contentRating: current.contentRating,
+              source: current.source,
+              availableTranslatedLanguages: current.availableTranslatedLanguages,
+              mangaBakaId: current.mangaBakaId,
+            );
+          }
+        }
+        _chapterLookup = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _chapterLookup = false);
+    }
+  }
+
   Future<void> _setReadingStatus(String status) async {
-    await LocalLibrary.setStatus(widget.item, status);
+    await LocalLibrary.setStatus(_displayItem, status);
     if (!mounted) return;
     setState(() => _readingStatus = status);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Status bacaan: ${readingStatusLabel(status)}')),
-    );
   }
 
   Future<void> _toggleSaved() async {
-    final value = await LocalLibrary.toggleFavorite(widget.item);
+    final value = await LocalLibrary.toggleFavorite(_displayItem);
     if (!mounted) return;
     setState(() => _saved = value);
+  }
+
+  Future<void> _copyLink() async {
+    await Clipboard.setData(ClipboardData(text: _displayItem.title + ' — ' + _displayItem.url));
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(value ? 'Ditambahkan ke favorit' : 'Dihapus dari favorit')),
+      const SnackBar(content: Text('Tautan disalin')),
+    );
+  }
+
+  Widget _buildHero(SeriesItem item) {
+    return SizedBox(
+      height: 232,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (item.cover.isNotEmpty) SeriesCover(url: item.cover),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  bg.withValues(alpha: .30),
+                  bg.withValues(alpha: .82),
+                  bg,
+                ],
+                stops: const [0, .55, 1],
+              ),
+            ),
+          ),
+          Align(
+            alignment: Alignment.bottomLeft,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 10, 18, 18),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Container(
+                    width: 126,
+                    height: 174,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.white.withValues(alpha: .12)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: .38),
+                          blurRadius: 20,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(15),
+                      child: SeriesCover(url: item.cover),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 3),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item.title,
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w900, height: 1.08),
+                          ),
+                          if (item.author.isNotEmpty) ...[
+                            const SizedBox(height: 7),
+                            Text(
+                              item.author,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: muted, fontSize: 11),
+                            ),
+                          ],
+                          const SizedBox(height: 10),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: [
+                              _DetailChip(text: typeLabel(item.type), color: accent),
+                              _DetailChip(text: statusLabel(item.status), color: accentAlt),
+                              if (item.rating != null)
+                                _DetailChip(
+                                  text: (item.rating! / 10).toStringAsFixed(1) + ' ★',
+                                  color: const Color(0xFFFFC857),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActions() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(15, 7, 15, 12),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          InkWell(
+            borderRadius: BorderRadius.circular(18),
+            onTap: _ready ? _toggleSaved : null,
+            child: _DetailAction(
+              icon: _saved ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+              label: 'Favorit',
+              active: _saved,
+            ),
+          ),
+          PopupMenuButton<String>(
+            tooltip: 'Status bacaan',
+            onSelected: _setReadingStatus,
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 'reading', child: Text('Sedang dibaca')),
+              PopupMenuItem(value: 'planned', child: Text('Nanti')),
+              PopupMenuItem(value: 'completed', child: Text('Selesai')),
+              PopupMenuItem(value: 'dropped', child: Text('Berhenti')),
+              PopupMenuItem(value: 'none', child: Text('Hapus status')),
+            ],
+            child: _DetailAction(
+              icon: _readingStatus == 'none'
+                  ? Icons.bookmark_add_outlined
+                  : Icons.bookmark_added_rounded,
+              label: 'Status',
+              active: _readingStatus != 'none',
+            ),
+          ),
+          InkWell(
+            borderRadius: BorderRadius.circular(18),
+            onTap: _copyLink,
+            child: const _DetailAction(
+              icon: Icons.ios_share_rounded,
+              label: 'Salin',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoTab(SeriesItem item) {
+    final description = item.description.trim().isEmpty ||
+            item.description == 'Deskripsi belum tersedia.'
+        ? 'Sinopsis belum tersedia.'
+        : item.description;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+      children: [
+        const Text('Sinopsis', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+        const SizedBox(height: 10),
+        Text(description, style: const TextStyle(color: Color(0xFFD2D9E4), fontSize: 13, height: 1.55)),
+        if (_enriching) ...[
+          const SizedBox(height: 8),
+          const LinearProgressIndicator(minHeight: 2, color: accent, backgroundColor: panel),
+        ],
+        const SizedBox(height: 24),
+        const Text('Info', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+        const SizedBox(height: 12),
+        _InfoRow(label: 'Jenis', value: typeLabel(item.type)),
+        _InfoRow(label: 'Status', value: statusLabel(item.status)),
+        if (item.author.isNotEmpty) _InfoRow(label: 'Kreator', value: item.author),
+        if (item.language != 'unknown' && item.language.isNotEmpty)
+          _InfoRow(label: 'Bahasa asli', value: item.language.toUpperCase()),
+        if (item.source.isNotEmpty) _InfoRow(label: 'Metadata', value: item.source),
+      ],
+    );
+  }
+
+  Widget _buildChapterTab(SeriesItem item) {
+    if (_chapterLookup) {
+      return const Center(
+        child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.4, color: accent)),
+      );
+    }
+    if (_mangaDexId != null && _chapterItem != null) {
+      return MangaDexChapterPage(item: _chapterItem!, mangaId: _mangaDexId!);
+    }
+    return const ErrorPanel(
+      icon: Icons.menu_book_outlined,
+      title: 'Chapter belum tersedia',
+      message: 'Belum ada sumber chapter yang cocok untuk judul ini.',
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final item = _displayItem;
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(typeLabel(item.type), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
-        actions: [
-          IconButton(
-            onPressed: _ready ? _toggleSaved : null,
-            tooltip: _saved ? 'Hapus favorit' : 'Simpan favorit',
-            icon: Icon(_saved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded, color: _saved ? accent : ink),
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        backgroundColor: bg,
+        appBar: AppBar(
+          backgroundColor: bg,
+          leading: const BackButton(),
+          title: Text(
+            item.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
           ),
-          PopupMenuButton<String>(
-            tooltip: 'Status bacaan',
-            enabled: _ready,
-            onSelected: _setReadingStatus,
-            itemBuilder: (context) => const [
-              PopupMenuItem(value: 'reading', child: Text('Sedang dibaca')),
-              PopupMenuItem(value: 'planned', child: Text('Rencana baca')),
-              PopupMenuItem(value: 'completed', child: Text('Selesai')),
-              PopupMenuItem(value: 'dropped', child: Text('Dihentikan')),
-              PopupMenuItem(value: 'none', child: Text('Hapus status')),
-            ],
-            icon: Icon(
-              _readingStatus == 'none' ? Icons.playlist_add_rounded : Icons.playlist_add_check_circle_rounded,
-              color: _readingStatus == 'none' ? ink : accent,
+          actions: [
+            IconButton(
+              tooltip: _saved ? 'Hapus favorit' : 'Favorit',
+              onPressed: _ready ? _toggleSaved : null,
+              icon: Icon(_saved ? Icons.favorite_rounded : Icons.favorite_border_rounded),
             ),
-          ),
-          IconButton(
-            tooltip: 'Bagikan judul',
-            onPressed: () async {
-              await Clipboard.setData(ClipboardData(text: item.title + ' — ' + item.url));
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Judul dan tautan disalin.')));
-              }
-            },
-            icon: const Icon(Icons.share_outlined),
-          ),
-        ],
-      ),
-      body: CustomScrollView(
-        slivers: [
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(18, 9, 18, 18),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    width: 142,
-                    height: 210,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(13),
-                      child: SeriesCover(url: item.cover),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(item.title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, height: 1.12)),
-                        const SizedBox(height: 10),
-                        _InfoPill(text: typeLabel(item.type)),
-                        const SizedBox(height: 7),
-                        _InfoPill(text: statusLabel(item.status)),
-                        if (item.rating != null) ...[
-                          const SizedBox(height: 8),
-                          Row(children: [
-                            const Icon(Icons.star_rounded, color: Color(0xFFFFC857), size: 17),
-                            const SizedBox(width: 4),
-                            Text((item.rating! / 10).toStringAsFixed(1) + '/10', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
-                          ]),
-                        ],
-                        if (item.author.isNotEmpty) ...[
-                          const SizedBox(height: 10),
-                          const Text('PENULIS', style: TextStyle(color: muted, fontSize: 8, letterSpacing: 1, fontWeight: FontWeight.w800)),
-                          const SizedBox(height: 3),
-                          Text(item.author, style: const TextStyle(fontSize: 11, color: ink)),
-                        ],
-                        const SizedBox(height: 8),
-                        Text('Bahasa asli: ' + item.language.toUpperCase(), style: const TextStyle(color: muted, fontSize: 9)),
-                      ],
-                    ),
-                  ),
+          ],
+        ),
+        body: Column(
+          children: [
+            _buildHero(item),
+            _buildActions(),
+            Container(
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: stroke)),
+              ),
+              child: const TabBar(
+                isScrollable: true,
+                tabAlignment: TabAlignment.start,
+                labelColor: accent,
+                unselectedLabelColor: muted,
+                indicatorColor: accent,
+                indicatorWeight: 3,
+                labelStyle: TextStyle(fontSize: 13, fontWeight: FontWeight.w900),
+                unselectedLabelStyle: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                tabs: [
+                  Tab(text: 'Info'),
+                  Tab(text: 'Chapters'),
                 ],
               ),
             ),
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: panel,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: stroke),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.verified_outlined, color: accent, size: 19),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Sumber metadata', style: TextStyle(fontSize: 10, color: muted)),
-                          Text(item.source, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          if (item.source == 'MangaDex')
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
-                child: FilledButton.icon(
-                  onPressed: () {
-                    final parts = Uri.tryParse(item.url)?.pathSegments ?? const <String>[];
-                    final titleIndex = parts.indexOf('title');
-                    final mangaId = titleIndex >= 0 && titleIndex + 1 < parts.length
-                        ? parts[titleIndex + 1]
-                        : '';
-                    if (!RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(mangaId)) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('ID MangaDex tidak valid.')),
-                      );
-                      return;
-                    }
-                    Navigator.of(context).push<void>(
-                      MaterialPageRoute(
-                        builder: (_) => MangaDexChapterPage(item: item, mangaId: mangaId),
-                      ),
-                    );
-                  },
-                  icon: const Icon(Icons.menu_book_rounded),
-                  label: const Text('Buka daftar chapter'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: accent,
-                    foregroundColor: Colors.black,
-                    minimumSize: const Size.fromHeight(48),
-                  ),
-                ),
-              ),
-            ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(18, 0, 18, 9),
-              child: const Text('SINOPSIS', style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: .7, fontSize: 13)),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(18, 0, 18, 22),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            Expanded(
+              child: TabBarView(
                 children: [
-                  Text(item.description, style: const TextStyle(color: Color(0xFFD0D0D0), fontSize: 12, height: 1.55)),
-                  if (_enriching && item.description == 'Deskripsi belum tersedia.') ...[
-                    const SizedBox(height: 8),
-                    const Text('Memuat sinopsis tambahan…', style: TextStyle(color: muted, fontSize: 10)),
-                  ],
+                  _buildInfoTab(item),
+                  _buildChapterTab(item),
                 ],
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
 
-class _InfoPill extends StatelessWidget {
-  const _InfoPill({required this.text});
+class _DetailChip extends StatelessWidget {
+  const _DetailChip({required this.text, required this.color});
   final String text;
+  final Color color;
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-        decoration: BoxDecoration(color: panel2, borderRadius: BorderRadius.circular(7)),
-        child: Text(text, style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w700)),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: .12),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withValues(alpha: .30)),
+        ),
+        child: Text(text, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w800)),
+      );
+}
+
+class _DetailAction extends StatelessWidget {
+  const _DetailAction({required this.icon, required this.label, this.active = false});
+  final IconData icon;
+  final String label;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        width: 76,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: panel,
+                shape: BoxShape.circle,
+                border: Border.all(color: stroke),
+                boxShadow: [
+                  BoxShadow(color: accent.withValues(alpha: active ? .14 : .04), blurRadius: 16),
+                ],
+              ),
+              child: Icon(icon, color: active ? accent : ink, size: 23),
+            ),
+            const SizedBox(height: 7),
+            Text(label, style: const TextStyle(color: muted, fontSize: 11, fontWeight: FontWeight.w700)),
+          ],
+        ),
+      );
+
+class _InfoRow extends StatelessWidget {
+  const _InfoRow({required this.label, required this.value});
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 9),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(width: 105, child: Text(label, style: const TextStyle(color: muted, fontSize: 12))),
+            Expanded(child: Text(value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700))),
+          ],
+        ),
       );
 }
 
@@ -3155,7 +3457,7 @@ class AboutPage extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             const Text('ManhwaKu', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
-            const Text('Versi 2.5.0', style: TextStyle(color: muted, fontSize: 11)),
+            const Text('Versi 2.7.0', style: TextStyle(color: muted, fontSize: 11)),
             const SizedBox(height: 14),
             const Text(
               'Katalog penemuan komik dan novel dari beberapa sumber metadata publik. '
