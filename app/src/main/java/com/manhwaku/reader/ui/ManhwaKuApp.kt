@@ -6,6 +6,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -270,7 +272,7 @@ private fun HomeScreen(
 }
 
 @Composable
-private fun QuickAction(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
+private fun RowScope.QuickAction(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
     Column(
         modifier = Modifier.weight(1f).clickable(onClick = onClick).padding(vertical = 5.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -734,9 +736,10 @@ private fun DetailScreen(
                     DetailTag(typeLabel(item.type), Accent)
                     DetailTag(statusLabel(item.status), AccentAlt)
                 }
-                if (item.rating != null) {
+                val rating = item.rating
+                if (rating != null) {
                     Spacer(Modifier.height(8.dp))
-                    Text("★ ${"%.1f".format(item.rating / 10.0)}", color = Color(0xFFFFC857), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text("★ ${"%.1f".format(rating / 10.0)}", color = Color(0xFFFFC857), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
