@@ -2376,9 +2376,7 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
     if (!mounted) return;
     setState(() => _readingStatus = status);
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Status bacaan: ${readingStatusLabel(status)}'),
-      ),
+      SnackBar(content: Text('Status bacaan: ${readingStatusLabel(status)}')),
     );
   }
 
@@ -2401,15 +2399,11 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
           IconButton(
             onPressed: _ready ? _toggleSaved : null,
             tooltip: _saved ? 'Hapus favorit' : 'Simpan favorit',
-            icon: Icon(
-              _saved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-              color: _saved ? accent : ink,
-            ),
+            icon: Icon(_saved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded, color: _saved ? accent : ink),
           ),
           PopupMenuButton<String>(
             tooltip: 'Status bacaan',
             enabled: _ready,
-            initialValue: _readingStatus,
             onSelected: _setReadingStatus,
             itemBuilder: (context) => const [
               PopupMenuItem(value: 'reading', child: Text('Sedang dibaca')),
@@ -2419,9 +2413,7 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
               PopupMenuItem(value: 'none', child: Text('Hapus status')),
             ],
             icon: Icon(
-              _readingStatus == 'none'
-                  ? Icons.playlist_add_rounded
-                  : Icons.playlist_add_check_circle_rounded,
+              _readingStatus == 'none' ? Icons.playlist_add_rounded : Icons.playlist_add_check_circle_rounded,
               color: _readingStatus == 'none' ? ink : accent,
             ),
           ),
@@ -2521,178 +2513,12 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
                 padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
                 child: FilledButton.icon(
                   onPressed: () {
-                    final parts = Uri.tryParse(item.url)?.pathSegments ?? const [];
+                    final parts = Uri.tryParse(item.url)?.pathSegments ?? const <String>[];
                     final titleIndex = parts.indexOf('title');
                     final mangaId = titleIndex >= 0 && titleIndex + 1 < parts.length
                         ? parts[titleIndex + 1]
                         : '';
-                    if (!RegExp(r'^[0-9a-fA-F-]{36}          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(18, 0, 18, 9),
-              child: const Text('SINOPSIS', style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: .7, fontSize: 13)),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(18, 0, 18, 22),
-              child: Text(item.description, style: const TextStyle(color: Color(0xFFD0D0D0), fontSize: 12, height: 1.55)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _InfoPill extends StatelessWidget {
-  const _InfoPill({required this.text});
-  final String text;
-
-  @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-        decoration: BoxDecoration(color: panel2, borderRadius: BorderRadius.circular(7)),
-        child: Text(text, style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w700)),
-      );
-}
-
-class AboutPage extends StatelessWidget {
-  const AboutPage({super.key});
-
-  @override
-  Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Tentang ManhwaKu')),
-        body: ListView(
-          padding: const EdgeInsets.all(22),
-          children: [
-            Container(
-              width: 64,
-              height: 64,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: accent,
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: const Icon(Icons.menu_book_rounded, color: Colors.black, size: 35),
-            ),
-            const SizedBox(height: 16),
-            const Text('ManhwaKu', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
-            const Text('Versi 2.4.0', style: TextStyle(color: muted, fontSize: 11)),
-            const SizedBox(height: 14),
-            const Text(
-              'Katalog penemuan komik dan novel dari beberapa sumber metadata publik. '
-              'Aplikasi menyaring hasil ke rating aman dan tidak mengunduh chapter dari situs pihak ketiga.',
-              style: TextStyle(color: Color(0xFFD0D0D0), fontSize: 13, height: 1.5),
-            ),
-            const SizedBox(height: 22),
-            const Text('SUMBER DATA', style: TextStyle(
-              color: accent, fontSize: 10, letterSpacing: 1.2, fontWeight: FontWeight.w900,
-            )),
-            const SizedBox(height: 10),
-            _SourceCredit(
-              title: 'MangaBaka',
-              url: 'https://mangabaka.org/developers',
-              note: 'Metadata • penggunaan personal/non-komersial • atribusi wajib',
-            ),
-            _SourceCredit(
-              title: 'MangaDex',
-              url: 'https://gitlab.com/mangadex-pub/mangadex-api-docs',
-              note: 'Metadata katalog • kebijakan penggunaan dan atribusi berlaku',
-            ),
-            _SourceCredit(
-              title: 'Jikan / MyAnimeList',
-              url: 'https://docs.api.jikan.moe/',
-              note: 'Metadata manga publik • tanpa API key',
-            ),
-            const SizedBox(height: 14),
-            const Text(
-              'ManhwaKu tidak berafiliasi dengan penyedia data tersebut. '
-              'Judul, sampul, dan deskripsi tetap dimiliki pemegang hak masing-masing.',
-              style: TextStyle(color: muted, fontSize: 10, height: 1.5),
-            ),
-          ],
-        ),
-      );
-}
-
-class _SourceCredit extends StatelessWidget {
-  const _SourceCredit({
-    required this.title,
-    required this.url,
-    required this.note,
-  });
-
-  final String title;
-  final String url;
-  final String note;
-
-  @override
-  Widget build(BuildContext context) => Container(
-        margin: const EdgeInsets.only(bottom: 9),
-        padding: const EdgeInsets.all(13),
-        decoration: BoxDecoration(
-          color: panel,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: stroke),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900)),
-            const SizedBox(height: 4),
-            Text(note, style: const TextStyle(color: muted, fontSize: 10)),
-            const SizedBox(height: 4),
-            Text(url, style: const TextStyle(color: accent, fontSize: 9)),
-          ],
-        ),
-      );
-}
-
-class ErrorPanel extends StatelessWidget {
-  const ErrorPanel({
-    super.key,
-    this.icon = Icons.cloud_off_rounded,
-    this.title = 'Tidak dapat memuat data',
-    required this.message,
-    this.onRetry,
-    this.retryLabel = 'Coba lagi',
-    this.secondary,
-  });
-
-  final IconData icon;
-  final String title;
-  final String message;
-  final VoidCallback? onRetry;
-  final String retryLabel;
-  final Widget? secondary;
-
-  @override
-  Widget build(BuildContext context) => Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 26),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, color: accent, size: 43),
-              const SizedBox(height: 13),
-              Text(title, textAlign: TextAlign.center, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
-              const SizedBox(height: 7),
-              Text(message, textAlign: TextAlign.center, style: const TextStyle(color: muted, fontSize: 11, height: 1.45)),
-              if (onRetry != null) ...[
-                const SizedBox(height: 15),
-                FilledButton(
-                  onPressed: onRetry,
-                  style: FilledButton.styleFrom(backgroundColor: accent, foregroundColor: Colors.black),
-                  child: Text(retryLabel),
-                ),
-              ],
-              if (secondary != null) secondary!,
-            ],
-          ),
-        ),
-      );
-}
-).hasMatch(mangaId)) {
+                    if (!RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(mangaId)) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('ID MangaDex tidak valid.')),
                       );
@@ -2700,10 +2526,7 @@ class ErrorPanel extends StatelessWidget {
                     }
                     Navigator.of(context).push<void>(
                       MaterialPageRoute(
-                        builder: (_) => MangaDexChapterPage(
-                          item: item,
-                          mangaId: mangaId,
-                        ),
+                        builder: (_) => MangaDexChapterPage(item: item, mangaId: mangaId),
                       ),
                     );
                   },
@@ -2768,7 +2591,7 @@ class AboutPage extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             const Text('ManhwaKu', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
-            const Text('Versi 2.4.0', style: TextStyle(color: muted, fontSize: 11)),
+            const Text('Versi 2.5.0', style: TextStyle(color: muted, fontSize: 11)),
             const SizedBox(height: 14),
             const Text(
               'Katalog penemuan komik dan novel dari beberapa sumber metadata publik. '
