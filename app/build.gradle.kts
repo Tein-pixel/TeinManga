@@ -5,15 +5,15 @@ plugins {
 }
 
 android {
-    namespace = "com.teinzz.teinmanga"
+    namespace = "com.manhwaku.reader"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.teinzz.teinmanga"
+        applicationId = "com.manhwaku.reader"
         minSdk = 29
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 16
+        versionName = "3.0.0"
     }
 
     buildTypes {
@@ -45,5 +45,7 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
