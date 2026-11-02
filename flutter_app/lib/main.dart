@@ -2577,6 +2577,7 @@ class SeriesCover extends StatelessWidget {
     if (url.isEmpty) return const _CoverFallback();
     return CachedNetworkImage(
       imageUrl: url,
+      cacheKey: '${url}::manhwaku-2.9.2',
       fit: fit,
       width: double.infinity,
       height: double.infinity,
@@ -3210,7 +3211,7 @@ class MangaDexSeriesLookupApi {
       );
       final response = await _client.get(uri, headers: const {
         'Accept': 'application/json',
-        'User-Agent': 'ManhwaKu/2.9.1 (safe title match)',
+        'User-Agent': 'ManhwaKu/2.9.2 (safe title match)',
       }).timeout(const Duration(seconds: 8));
       if (response.statusCode != 200) return null;
 
@@ -3309,8 +3310,8 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
           title: base.title,
           type: base.type,
           url: base.url,
-          cover: base.cover.isNotEmpty ? base.cover : full.cover,
-          coverLarge: base.coverLarge.isNotEmpty ? base.coverLarge : full.coverLarge,
+          cover: full.cover.isNotEmpty ? full.cover : base.cover,
+          coverLarge: full.coverLarge.isNotEmpty ? full.coverLarge : base.coverLarge,
           description: hasSynopsis ? base.description : full.description,
           status: base.status == 'unknown' ? full.status : base.status,
           rating: base.rating ?? full.rating,
@@ -3600,7 +3601,7 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
         if (item.language != 'unknown' && item.language.isNotEmpty)
           _InfoRow(label: 'Bahasa asli', value: item.language.toUpperCase()),
         if (item.source.isNotEmpty) _InfoRow(label: 'Metadata', value: item.source),
-        if (item.publisherUrl.isNotEmpty) PublisherLinkButton(publisherUrl: item.publisherUrl),
+        OfficialReadingLinkButton(item: item),
       ],
     );
   }
@@ -3616,9 +3617,9 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
     }
     return ErrorPanel(
       icon: Icons.menu_book_outlined,
-      title: 'Chapter belum tersedia',
-      message: 'Belum ada sumber chapter yang cocok untuk judul ini.',
-      secondary: item.publisherUrl.isNotEmpty ? PublisherLinkButton(publisherUrl: item.publisherUrl) : null,
+      title: 'Sumber chapter belum terhubung',
+      message: 'Katalog judul tersedia, tetapi feed chapter belum tersedia dari sumber yang terhubung. Buka halaman penerbit resmi bila tersedia.',
+      secondary: OfficialReadingLinkButton(item: item),
     );
   }
 
@@ -3684,9 +3685,56 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
   }
 }
 
+class OfficialReadingSources {
+  static String urlFor(SeriesItem item) {
+    if (item.publisherUrl.isNotEmpty) return item.publisherUrl;
+    final normalized = item.title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+    if (normalized.contains('lookism')) {
+      return 'https://www.webtoons.com/id/action/lookism/list?title_no=532';
+    }
+    if (normalized.contains('sololeveling') ||
+        normalized.contains('nahonjaman') ||
+        normalized.contains('ialonelevelup')) {
+      return 'https://webtoon.kakao.com/content/2320/2320';
+    }
+    return '';
+  }
+
+  static String labelFor(SeriesItem item) {
+    final normalized = item.title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+    if (normalized.contains('lookism')) {
+      return 'Buka Lookism resmi · WEBTOON (16+)';
+    }
+    if (normalized.contains('sololeveling') ||
+        normalized.contains('nahonjaman') ||
+        normalized.contains('ialonelevelup')) {
+      return 'Buka Solo Leveling resmi · Kakao Webtoon';
+    }
+    return 'Buka halaman penerbit resmi';
+  }
+}
+
+class OfficialReadingLinkButton extends StatelessWidget {
+  const OfficialReadingLinkButton({super.key, required this.item});
+  final SeriesItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    return PublisherLinkButton(
+      publisherUrl: OfficialReadingSources.urlFor(item),
+      label: OfficialReadingSources.labelFor(item),
+    );
+  }
+}
+
 class PublisherLinkButton extends StatelessWidget {
-  const PublisherLinkButton({super.key, required this.publisherUrl});
+  const PublisherLinkButton({
+    super.key,
+    required this.publisherUrl,
+    this.label = 'Buka penerbit',
+  });
   final String publisherUrl;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
@@ -3704,7 +3752,7 @@ class PublisherLinkButton extends StatelessWidget {
           launchUrl(url, mode: LaunchMode.externalApplication);
         },
         icon: const Icon(Icons.open_in_new_rounded, size: 17),
-        label: const Text('Buka penerbit'),
+        label: Text(label),
         style: OutlinedButton.styleFrom(
           foregroundColor: accent,
           side: const BorderSide(color: stroke),
@@ -3803,11 +3851,11 @@ class AboutPage extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             const Text('ManhwaKu', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
-            const Text('Versi 2.8.0', style: TextStyle(color: muted, fontSize: 11)),
+            const Text('Versi 2.9.2', style: TextStyle(color: muted, fontSize: 11)),
             const SizedBox(height: 14),
             const Text(
               'Katalog penemuan komik dan novel dari beberapa sumber metadata publik. '
-              'Aplikasi menyaring hasil ke rating aman dan tidak mengunduh chapter dari situs pihak ketiga.',
+              'Aplikasi menyaring hasil ke rating aman, menampilkan bahasa chapter yang tersedia, dan mengarahkan ke penerbit resmi bila feed tidak tersedia.',
               style: TextStyle(color: Color(0xFFD0D0D0), fontSize: 13, height: 1.5),
             ),
             const SizedBox(height: 22),
