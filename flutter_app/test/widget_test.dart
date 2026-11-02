@@ -31,7 +31,13 @@ void main() {
       ],
       'type': 'manhwa',
       'canonical_url': 'https://mangabaka.org/series/123',
-      'cover': {'x350': 'https://img.example/cover.jpg'},
+      'cover': {
+        'x350': {
+          'x1': 'https://img.example/cover-1x.jpg',
+          'x2': 'https://img.example/cover-2x.jpg',
+          'x3': 'https://img.example/cover-3x.jpg',
+        },
+      },
       'description': 'A school drama.',
       'status': 'completed',
       'rating': 86,
@@ -40,7 +46,8 @@ void main() {
       'content_rating': 'safe',
     });
     expect(item.title, 'Lookism');
-    expect(item.cover, 'https://img.example/cover.jpg');
+    expect(item.cover, 'https://img.example/cover-2x.jpg');
+    expect(item.coverLarge, 'https://img.example/cover-3x.jpg');
     expect(item.description, 'A school drama.');
     expect(item.type, 'manhwa');
     expect(item.language, 'ko');
@@ -62,6 +69,24 @@ void main() {
     });
     expect(item.description, '한국어 시놉시스');
     expect(item.availableTranslatedLanguages, containsAll(['en', 'ko']));
+  });
+
+  test('MangaDex keeps a compact cover and an original detail cover', () {
+    final item = SeriesItem.fromMangaDex({
+      'id': '11111111-2222-4333-8444-555555555555',
+      'attributes': {
+        'title': {'en': 'Cover test'},
+        'description': {},
+        'originalLanguage': 'ja',
+        'availableTranslatedLanguages': ['id'],
+        'contentRating': 'safe',
+      },
+      'relationships': [
+        {'type': 'cover_art', 'attributes': {'fileName': 'cover-file.jpg'}},
+      ],
+    });
+    expect(item.cover, endsWith('cover-file.jpg.512.jpg'));
+    expect(item.coverLarge, endsWith('/cover-file.jpg'));
   });
 
   test('MangaDex marks titles with restricted safety tags as blocked', () {
@@ -104,13 +129,17 @@ void main() {
       'type': 'manga',
       'original_language': 'ja',
       'content_rating': 'safe',
-      'links': [
-        {'type': 'webplatform', 'url': 'https://reader.example/series/1'},
-        {'type': 'publisher', 'url': 'http://publisher.example/work/1'},
-        {'type': 'publisher', 'url': 'https://publisher.example/work/1'},
+      'links_v2': [
+        {'type': 'webplatform', 'trust_level': 'official', 'status': 'active', 'url': 'https://reader.example/series/1'},
+        {'type': 'publisher', 'trust_level': 'neutral', 'status': 'active', 'url': 'https://unverified.example/work/1'},
+        {'type': 'publisher', 'trust_level': 'official', 'status': 'active', 'url': 'http://publisher.example/work/1'},
       ],
     });
-    expect(item.publisherUrl, 'https://publisher.example/work/1');
+    expect(item.publisherUrl, 'https://reader.example/series/1');
+  });
+
+  test('Indonesian is the first chapter-language preference', () {
+    expect(MangaDexChapterPage.preferredLanguage, 'id');
   });
 
   test('MangaDex records without an explicit rating remain unknown', () {

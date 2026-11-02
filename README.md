@@ -72,3 +72,14 @@ Provider limits and licenses remain in force. MangaBaka data is personal/non-com
 - The chapter screen offers an available publisher page when the supported chapter source has no safe chapters. It does not invent counts or silently substitute a different series.
 - MangaDex attribution, scanlation-group credit, removal requests, and no-ads/no-paid-services requirements remain in force.
 
+
+
+## v2.9.0 language and artwork polish
+
+- Indonesian (`id`) is the first/default MangaDex chapter language. Other languages remain optional; an empty Indonesian feed is explained instead of silently switching languages.
+- MangaBaka cover metadata uses the documented 2x variant for catalogue cards and 3x variant for detail views when available.
+- MangaDex keeps its 512px thumbnail for catalogue cards and exposes the original cover only on the detail page. Decoded detail images are bounded to 720px.
+- The detail hero no longer enlarges the portrait cover as a blurry full-width background. It uses a glossy navy/cyan/purple gradient that avoids expensive image blur on low-end devices.
+- Publisher and reading-platform links use the documented `links_v2` schema and are exposed only when marked active, trusted/official, and HTTPS.
+- Unofficial mirrors, unverified private APIs, and third-party HTML scraping are not integrated. MangaDex remains the connected chapter feed; MangaBaka is used for metadata only.
+

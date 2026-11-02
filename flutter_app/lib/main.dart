@@ -153,6 +153,7 @@ class SeriesItem {
     this.availableTranslatedLanguages = const <String>[],
     this.mangaBakaId,
     this.publisherUrl = '',
+    this.coverLarge = '',
   });
 
   final int id;
@@ -170,6 +171,7 @@ class SeriesItem {
   final List<String> availableTranslatedLanguages;
   final int? mangaBakaId;
   final String publisherUrl;
+  final String coverLarge;
 
   factory SeriesItem.fromJson(Map<String, dynamic> json) {
     final coverData = json['cover'] is Map
@@ -191,6 +193,14 @@ class SeriesItem {
       x250['x1'],
       raw['url'],
     ]);
+    final coverLarge = _firstText([
+      x350['x3'],
+      x350['x2'],
+      x250['x3'],
+      x250['x2'],
+      raw['url'],
+      cover,
+    ]);
     final authors = json['authors'] is List ? json['authors'] as List : const [];
     final ratingValue = json['rating'];
     return SeriesItem(
@@ -204,6 +214,7 @@ class SeriesItem {
       type: _firstText([json['type'], 'other']),
       url: _firstText([json['canonical_url'], 'https://mangabaka.org/']),
       cover: cover,
+      coverLarge: coverLarge,
       description: _firstText([json['description'], 'Deskripsi belum tersedia.']),
       status: _firstText([json['status'], 'unknown']),
       rating: ratingValue is num ? ratingValue.toDouble() : null,
@@ -235,10 +246,17 @@ class SeriesItem {
     final coverData = json['cover'] is Map
         ? Map<String, dynamic>.from(json['cover'] as Map)
         : <String, dynamic>{};
-    String coverValue(String key) {
+    String coverValue(String key, {String dpi = 'x2'}) {
       final value = coverData[key];
       if (value is String) return value;
-      if (value is Map) return _firstText([value['x2'], value['x1'], value['url']]);
+      if (value is Map) {
+        return _firstText([
+          value[dpi],
+          value['x2'],
+          value['x1'],
+          value['url'],
+        ]);
+      }
       return '';
     }
 
@@ -248,7 +266,7 @@ class SeriesItem {
         : entry.toString()).where((name) => name.trim().isNotEmpty).take(2).join(', ');
     final ratingValue = json['rating'];
     final hasRestrictedTags = _hasRestrictedTags(json['tags']);
-    final publisherUrl = _extractPublisherUrl(json['links']);
+    final publisherUrl = _extractPublisherUrl(json['links_v2']);
 
     return SeriesItem(
       id: _toInt(json['id']),
@@ -268,6 +286,12 @@ class SeriesItem {
         coverValue('x250'),
         coverValue('x150'),
         coverValue('raw'),
+      ]),
+      coverLarge: _firstText([
+        coverValue('x350', dpi: 'x3'),
+        coverValue('x250', dpi: 'x3'),
+        coverValue('raw'),
+        coverValue('x350'),
       ]),
       description: _firstText([json['description'], 'Deskripsi belum tersedia.']),
       status: _firstText([json['status'], json['state'], 'unknown']),
@@ -358,8 +382,12 @@ class SeriesItem {
     }
 
     final id = _firstText([json['id']]);
-    final cover = coverFile.isEmpty ? '' :
-        'https://uploads.mangadex.org/covers/$id/$coverFile.512.jpg';
+    final cover = coverFile.isEmpty
+        ? ''
+        : 'https://uploads.mangadex.org/covers/$id/$coverFile.512.jpg';
+    final coverLarge = coverFile.isEmpty
+        ? ''
+        : 'https://uploads.mangadex.org/covers/$id/$coverFile';
     final hasRestrictedTags = _hasRestrictedTags(attributes['tags']);
     final availableLanguages = attributes['availableTranslatedLanguages'] is List
         ? (attributes['availableTranslatedLanguages'] as List)
@@ -384,6 +412,7 @@ class SeriesItem {
       type: type,
       url: id.isEmpty ? 'https://mangadex.org/' : 'https://mangadex.org/title/$id',
       cover: cover,
+      coverLarge: coverLarge,
       description: _firstText([
         descriptions['en'],
         descriptions['id'],
@@ -407,6 +436,7 @@ class SeriesItem {
         type: _firstText([json['type'], 'other']),
         url: _firstText([json['url'], 'https://mangabaka.org/']),
         cover: _firstText([json['cover']]),
+        coverLarge: _firstText([json['coverLarge']]),
         description: _firstText([json['description']]),
         status: _firstText([json['status']]),
         rating: json['rating'] is num ? (json['rating'] as num).toDouble() : null,
@@ -426,6 +456,7 @@ class SeriesItem {
         'type': type,
         'url': url,
         'cover': cover,
+        'coverLarge': coverLarge,
         'description': description,
         'status': status,
         'rating': rating,
@@ -443,7 +474,13 @@ class SeriesItem {
 String _extractPublisherUrl(dynamic rawLinks) {
   if (rawLinks is! List) return '';
   for (final raw in rawLinks) {
-    if (raw is! Map || raw['type']?.toString().toLowerCase() != 'publisher') {
+    if (raw is! Map) continue;
+    final type = raw['type']?.toString().toLowerCase();
+    final trust = raw['trust_level']?.toString().toLowerCase();
+    final status = raw['status']?.toString().toLowerCase();
+    if ((type != 'publisher' && type != 'webplatform') ||
+        (trust != 'official' && trust != 'trusted') ||
+        status != 'active') {
       continue;
     }
     final candidate = Uri.tryParse(_firstText([raw['url']]));
@@ -867,7 +904,12 @@ class CatalogApi {
             title: primary.title,
             type: primary.type,
             url: primary.url,
-            cover: primary.cover.isNotEmpty ? primary.cover : supplement.cover,
+            cover: supplement.source == 'MangaBaka' && supplement.cover.isNotEmpty
+                ? supplement.cover
+                : (primary.cover.isNotEmpty ? primary.cover : supplement.cover),
+            coverLarge: supplement.source == 'MangaBaka' && supplement.coverLarge.isNotEmpty
+                ? supplement.coverLarge
+                : (primary.coverLarge.isNotEmpty ? primary.coverLarge : supplement.coverLarge),
             description: primary.description.isNotEmpty &&
                     primary.description != 'Deskripsi belum tersedia.'
                 ? primary.description
@@ -929,7 +971,7 @@ class CatalogApi {
       uri,
       headers: const {
         'Accept': 'application/json',
-        'User-Agent': 'ManhwaKu/2.8 (Android; catalog)',
+        'User-Agent': 'ManhwaKu/2.9 (Android; catalog)',
       },
       timeout: _providerTimeout,
     );
@@ -992,7 +1034,7 @@ class CatalogApi {
       uri,
       headers: const {
         'Accept': 'application/json',
-        'User-Agent': 'ManhwaKu/2.8 (Android; safe-catalog)',
+        'User-Agent': 'ManhwaKu/2.9 (Android; safe-catalog)',
       },
       timeout: _providerTimeout,
     );
@@ -1264,7 +1306,7 @@ class MangaDexChapterApi {
       uri,
       headers: const {
         'Accept': 'application/json',
-        'User-Agent': 'ManhwaKu/2.8 (safe reader)',
+        'User-Agent': 'ManhwaKu/2.9 (safe reader)',
       },
       timeout: const Duration(seconds: 12),
     );
@@ -1356,7 +1398,8 @@ class MangaDexChapterPage extends StatefulWidget {
 
 class _MangaDexChapterPageState extends State<MangaDexChapterPage> {
   static const int _pageSize = 100;
-  String _language = 'all';
+  static const String preferredLanguage = 'id';
+  String _language = preferredLanguage;
   final List<MangaDexChapter> _chapters = [];
   int _requestId = 0;
   bool _loading = true;
@@ -1365,7 +1408,7 @@ class _MangaDexChapterPageState extends State<MangaDexChapterPage> {
   String? _error;
 
   List<String> get _availableLanguages {
-    final values = <String>['all'];
+    final values = <String>['id', 'all'];
     for (final language in [
       ...widget.item.availableTranslatedLanguages,
       widget.item.language,
@@ -1526,7 +1569,9 @@ class _MangaDexChapterPageState extends State<MangaDexChapterPage> {
                       ? ErrorPanel(
                           icon: Icons.menu_book_outlined,
                           title: 'Belum ada chapter',
-                          message: 'Belum ada chapter aman dari sumber yang terhubung.',
+                          message: _language == 'id'
+                              ? 'Belum ada chapter bahasa Indonesia dari sumber yang terhubung. Pilih Semua bahasa untuk memeriksa terjemahan lain.'
+                              : 'Belum ada chapter aman dalam bahasa yang dipilih.',
                           onRetry: () => _load(reset: true),
                           secondary: widget.item.publisherUrl.isNotEmpty
                               ? PublisherLinkButton(publisherUrl: widget.item.publisherUrl)
@@ -2436,9 +2481,10 @@ class SeriesCard extends StatelessWidget {
 }
 
 class SeriesCover extends StatelessWidget {
-  const SeriesCover({super.key, required this.url, this.fit = BoxFit.cover});
+  const SeriesCover({super.key, required this.url, this.fit = BoxFit.cover, this.highResolution = false});
   final String url;
   final BoxFit fit;
+  final bool highResolution;
 
   @override
   Widget build(BuildContext context) {
@@ -2448,8 +2494,8 @@ class SeriesCover extends StatelessWidget {
       fit: fit,
       width: double.infinity,
       height: double.infinity,
-      memCacheWidth: 480,
-      maxWidthDiskCache: 480,
+      memCacheWidth: highResolution ? 720 : 480,
+      maxWidthDiskCache: highResolution ? 720 : 480,
       fadeInDuration: const Duration(milliseconds: 100),
       placeholder: (_, __) => Container(
         color: panel2,
@@ -3178,6 +3224,7 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
           type: base.type,
           url: base.url,
           cover: base.cover.isNotEmpty ? base.cover : full.cover,
+          coverLarge: base.coverLarge.isNotEmpty ? base.coverLarge : full.coverLarge,
           description: hasSynopsis ? base.description : full.description,
           status: base.status == 'unknown' ? full.status : base.status,
           rating: base.rating ?? full.rating,
@@ -3226,7 +3273,8 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
               title: current.title,
               type: current.type,
               url: current.url,
-              cover: match.cover,
+              cover: current.cover.isNotEmpty ? current.cover : match.cover,
+              coverLarge: current.coverLarge.isNotEmpty ? current.coverLarge : match.coverLarge,
               description: hasDescription ? current.description : match.description,
               status: current.status,
               rating: current.rating,
@@ -3273,18 +3321,46 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          if (item.cover.isNotEmpty) SeriesCover(url: item.cover),
-          DecoratedBox(
+          const DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
                 colors: [
-                  bg.withValues(alpha: .30),
-                  bg.withValues(alpha: .82),
+                  Color(0xFF18324A),
+                  Color(0xFF172239),
+                  Color(0xFF101725),
                   bg,
                 ],
-                stops: const [0, .55, 1],
+                stops: [0, .34, .72, 1],
+              ),
+            ),
+          ),
+          Positioned(
+            right: -74,
+            top: -106,
+            child: Container(
+              width: 270,
+              height: 270,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [accent.withValues(alpha: .22), Colors.transparent],
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: -105,
+            top: 20,
+            child: Container(
+              width: 220,
+              height: 220,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [accentAlt.withValues(alpha: .16), Colors.transparent],
+                ),
               ),
             ),
           ),
@@ -3296,8 +3372,8 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Container(
-                    width: 126,
-                    height: 174,
+                    width: 134,
+                    height: 184,
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(color: Colors.white.withValues(alpha: .12)),
@@ -3311,7 +3387,10 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
                     ),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(15),
-                      child: SeriesCover(url: item.cover),
+                      child: SeriesCover(
+                        url: item.coverLarge.isNotEmpty ? item.coverLarge : item.cover,
+                        highResolution: true,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 16),
