@@ -19,6 +19,7 @@ void main() {
     expect(find.text('RIWAYAT'), findsOneWidget);
     expect(find.text('MULTI-SOURCE CATALOG'), findsOneWidget);
     expect(find.text('WEBTOON ORIGINAL'), findsNothing);
+    expect(find.text('MULTI-SOURCE CATALOG'), findsOneWidget);
   });
 
   test('Reading status is exclusive and persists locally', () async {

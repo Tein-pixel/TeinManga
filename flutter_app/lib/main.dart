@@ -15,6 +15,9 @@ const Color stroke = Color(0xFF303030);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  final imageCache = PaintingBinding.instance.imageCache;
+  imageCache.maximumSize = 60;
+  imageCache.maximumSizeBytes = 32 * 1024 * 1024;
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: bg,
@@ -690,6 +693,7 @@ class MangaDexChapterApi {
   static Future<List<MangaDexChapter>> fetchChapters(
     String mangaId, {
     String language = 'id',
+    int offset = 0,
   }) async {
     if (!_uuid.hasMatch(mangaId)) {
       throw const FormatException('ID MangaDex tidak valid.');
@@ -697,14 +701,18 @@ class MangaDexChapterApi {
     if (language != 'id' && language != 'en') {
       throw const FormatException('Bahasa chapter tidak didukung.');
     }
+    if (offset < 0) {
+      throw const FormatException('Offset chapter tidak valid.');
+    }
     final uri = Uri.parse(
       'https://api.mangadex.org/manga/$mangaId/feed'
       '?limit=100'
+      '&offset=$offset'
       '&translatedLanguage%5B%5D=$language'
       '&contentRating%5B%5D=safe'
       '&includes%5B%5D=scanlation_group'
-      '&order%5Bvolume%5D=asc'
-      '&order%5Bchapter%5D=asc',
+      '&order%5Bvolume%5D=desc'
+      '&order%5Bchapter%5D=desc',
     );
     final response = await _client
         .get(uri, headers: const {
@@ -781,26 +789,68 @@ class MangaDexChapterPage extends StatefulWidget {
 }
 
 class _MangaDexChapterPageState extends State<MangaDexChapterPage> {
+  static const int _pageSize = 100;
   String _language = 'id';
-  late Future<List<MangaDexChapter>> _future;
+  final List<MangaDexChapter> _chapters = [];
+  bool _loading = true;
+  bool _loadingMore = false;
+  bool _hasMore = false;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _future = MangaDexChapterApi.fetchChapters(
-      widget.mangaId,
-      language: _language,
-    );
+    _load(reset: true);
+  }
+
+  Future<void> _load({bool reset = false}) async {
+    if (!reset && (_loading || _loadingMore || !_hasMore)) return;
+    if (reset) {
+      setState(() {
+        _chapters.clear();
+        _loading = true;
+        _loadingMore = false;
+        _hasMore = false;
+        _error = null;
+      });
+    } else {
+      setState(() {
+        _loadingMore = true;
+        _error = null;
+      });
+    }
+
+    try {
+      final fetched = await MangaDexChapterApi.fetchChapters(
+        widget.mangaId,
+        language: _language,
+        offset: reset ? 0 : _chapters.length,
+      );
+      if (!mounted) return;
+      setState(() {
+        final seen = _chapters.map((chapter) => chapter.id).toSet();
+        for (final chapter in fetched) {
+          if (seen.add(chapter.id)) _chapters.add(chapter);
+        }
+        _hasMore = fetched.length == _pageSize;
+        _loading = false;
+        _loadingMore = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _loadingMore = false;
+        _error = error.toString().replaceFirst('Exception: ', '');
+      });
+    }
   }
 
   void _changeLanguage(String language) {
     setState(() {
       _language = language;
-      _future = MangaDexChapterApi.fetchChapters(
-        widget.mangaId,
-        language: language,
-      );
     });
+    _load(reset: true);
   }
 
   void _openChapter(MangaDexChapter chapter) {
@@ -829,81 +879,86 @@ class _MangaDexChapterPageState extends State<MangaDexChapterPage> {
               ],
               icon: const Icon(Icons.translate_rounded),
             ),
+            IconButton(
+              tooltip: 'Muat ulang',
+              onPressed: () => _load(reset: true),
+              icon: const Icon(Icons.refresh_rounded),
+            ),
           ],
         ),
-        body: FutureBuilder<List<MangaDexChapter>>(
-          future: _future,
-          builder: (context, snapshot) {
-            if (snapshot.hasError) {
-              return ErrorPanel(
-                title: 'Chapter gagal dimuat',
-                message: 'Sumber sedang tidak merespons. Coba lagi.',
-                onRetry: () => _changeLanguage(_language),
-              );
-            }
-            if (!snapshot.hasData) {
-              return const Center(
-                child: CircularProgressIndicator(color: accent),
-              );
-            }
-            final chapters = snapshot.data!;
-            if (chapters.isEmpty) {
-              return const ErrorPanel(
-                icon: Icons.menu_book_outlined,
-                title: 'Belum ada chapter',
-                message: 'Belum ditemukan chapter berlabel aman dalam bahasa ini.',
-              );
-            }
-            return ListView.separated(
-              padding: const EdgeInsets.all(14),
-              itemCount: chapters.length,
-              separatorBuilder: (_, __) => const Divider(color: stroke, height: 1),
-              itemBuilder: (context, index) {
-                final chapter = chapters[index];
-                final number = chapter.number.isEmpty
-                    ? 'Chapter'
-                    : 'Chapter ${chapter.number}';
-                return ListTile(
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
-                  ),
-                  leading: Container(
-                    width: 42,
-                    height: 42,
-                    decoration: BoxDecoration(
-                      color: panel,
-                      borderRadius: BorderRadius.circular(11),
-                    ),
-                    alignment: Alignment.center,
-                    child: const Icon(Icons.menu_book_rounded, color: accent),
-                  ),
-                  title: Text(
-                    chapter.title.isEmpty
-                        ? number
-                        : '$number • ${chapter.title}',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
-                  ),
-                  subtitle: Text(
-                    [
-                      if (chapter.volume.isNotEmpty) 'Vol. ${chapter.volume}',
-                      '${chapter.pageCount} halaman',
-                      if (chapter.scanlationGroup.isNotEmpty)
-                        'Grup: ${chapter.scanlationGroup}',
-                    ].join(' • '),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: muted, fontSize: 10),
-                  ),
-                  trailing: const Icon(Icons.chevron_right_rounded, color: accent),
-                  onTap: () => _openChapter(chapter),
-                );
-              },
-            );
-          },
-        ),
+        body: _loading && _chapters.isEmpty
+            ? const Center(child: CircularProgressIndicator(color: accent))
+            : _error != null && _chapters.isEmpty
+                ? ErrorPanel(
+                    title: 'Chapter gagal dimuat',
+                    message: _error!,
+                    onRetry: () => _load(reset: true),
+                  )
+                : _chapters.isEmpty
+                    ? const ErrorPanel(
+                        icon: Icons.menu_book_outlined,
+                        title: 'Belum ada chapter',
+                        message: 'Belum ditemukan chapter berlabel aman dalam bahasa ini.',
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.all(14),
+                        itemCount: _chapters.length + (_hasMore || _loadingMore ? 1 : 0),
+                        separatorBuilder: (_, __) => const Divider(color: stroke, height: 1),
+                        itemBuilder: (context, index) {
+                          if (index >= _chapters.length) {
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              child: Center(
+                                child: _loadingMore
+                                    ? const CircularProgressIndicator(color: accent)
+                                    : TextButton.icon(
+                                        onPressed: () => _load(),
+                                        icon: const Icon(Icons.expand_more_rounded),
+                                        label: const Text('Muat chapter lebih lama'),
+                                      ),
+                              ),
+                            );
+                          }
+                          final chapter = _chapters[index];
+                          final number = chapter.number.isEmpty
+                              ? 'Chapter'
+                              : 'Chapter ${chapter.number}';
+                          return ListTile(
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            leading: Container(
+                              width: 42,
+                              height: 42,
+                              decoration: BoxDecoration(
+                                color: panel,
+                                borderRadius: BorderRadius.circular(11),
+                              ),
+                              alignment: Alignment.center,
+                              child: const Icon(Icons.menu_book_rounded, color: accent),
+                            ),
+                            title: Text(
+                              chapter.title.isEmpty
+                                  ? number
+                                  : '$number • ${chapter.title}',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+                            ),
+                            subtitle: Text(
+                              [
+                                if (chapter.volume.isNotEmpty) 'Vol. ${chapter.volume}',
+                                '${chapter.pageCount} halaman',
+                                if (chapter.scanlationGroup.isNotEmpty)
+                                  'Grup: ${chapter.scanlationGroup}',
+                              ].join(' • '),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: muted, fontSize: 10),
+                            ),
+                            trailing: const Icon(Icons.chevron_right_rounded, color: accent),
+                            onTap: () => _openChapter(chapter),
+                          );
+                        },
+                      ),
       );
 }
 
@@ -1046,6 +1101,7 @@ class _MangaDexReaderPageState extends State<MangaDexReaderPage> {
               );
             }
             return PageView.builder(
+              reverse: widget.item.language == 'ja',
               itemCount: pages.length,
               onPageChanged: (index) {
                 if (mounted) setState(() => _currentPage = index);
@@ -1981,6 +2037,8 @@ class _SearchTabState extends State<SearchTab> {
     'Manhwa': ['manhwa'],
     'Manhua': ['manhua'],
     'Novel': ['novel'],
+    'Light Novel': ['lightnovel'],
+    'Webtoon': ['webtoon'],
     'OEL': ['oel'],
     'Lainnya': ['other'],
   };
