@@ -1126,7 +1126,7 @@ class MangaBakaDetailsApi {
       final response = await _client
           .get(uri, headers: const {
             'Accept': 'application/json',
-            'User-Agent': 'ManhwaKu/2.6 Android',
+            'User-Agent': 'ManhwaKu/2.9.2 (Android; metadata)',
           })
           .timeout(const Duration(seconds: 5));
       if (response.statusCode != 200) return null;
@@ -1199,7 +1199,7 @@ class MangaBakaDetailsApi {
     }
   }
 
-  static Future<SeriesItem?> _fetch(int id) async {
+  static Future<SeriesItem?> _fetch(int id, {int mergeDepth = 0}) async {
     try {
       final uri = Uri.https(
         'api.mangabaka.org',
@@ -1209,7 +1209,7 @@ class MangaBakaDetailsApi {
       final response = await _client
           .get(uri, headers: const {
             'Accept': 'application/json',
-            'User-Agent': 'ManhwaKu/2.6 Android',
+            'User-Agent': 'ManhwaKu/2.9.2 (Android; metadata)',
           })
           .timeout(const Duration(seconds: 6));
       if (response.statusCode != 200) return null;
@@ -1219,6 +1219,13 @@ class MangaBakaDetailsApi {
       final raw = decoded['data'] is Map ? decoded['data'] : decoded;
       if (raw is! Map) return null;
       final data = Map<String, dynamic>.from(raw);
+      if (data['state']?.toString().toLowerCase() == 'merged') {
+        final replacementId = _toInt(data['merged_with']);
+        if (replacementId > 0 && replacementId != id && mergeDepth < 2) {
+          return _fetch(replacementId, mergeDepth: mergeDepth + 1);
+        }
+        return null;
+      }
       final item = SeriesItem.fromMangaBakaV2(data);
       if (item.id <= 0 || item.contentRating != 'safe') return null;
       return item;
