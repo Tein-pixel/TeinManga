@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -1002,43 +1003,73 @@ class MangaDexChapterPage extends StatefulWidget {
 
 class _MangaDexChapterPageState extends State<MangaDexChapterPage> {
   static const int _pageSize = 100;
-  String _language = 'id';
+  late String _language;
   final List<MangaDexChapter> _chapters = [];
+  int _requestId = 0;
   bool _loading = true;
   bool _loadingMore = false;
   bool _hasMore = false;
   String? _error;
 
+  List<String> get _availableLanguages {
+    final languages = <String>[];
+    for (final value in widget.item.availableTranslatedLanguages) {
+      final normalized = value.toLowerCase();
+      if (RegExp(r'^[a-z]{2}(?:-[a-z]{2})?$').hasMatch(normalized) &&
+          !languages.contains(normalized)) {
+        languages.add(normalized);
+      }
+    }
+    final original = widget.item.language.toLowerCase();
+    if (original != 'unknown' &&
+        RegExp(r'^[a-z]{2}(?:-[a-z]{2})?$').hasMatch(original) &&
+        !languages.contains(original)) {
+      languages.add(original);
+    }
+    if (languages.isEmpty) return const ['id', 'en', 'ko', 'ja', 'zh'];
+    return languages;
+  }
+
+  String _initialLanguage() {
+    final languages = _availableLanguages;
+    if (languages.contains('id')) return 'id';
+    if (languages.contains(widget.item.language.toLowerCase())) {
+      return widget.item.language.toLowerCase();
+    }
+    if (languages.contains('en')) return 'en';
+    return languages.first;
+  }
+
   @override
   void initState() {
     super.initState();
+    _language = _initialLanguage();
     _load(reset: true);
   }
 
   Future<void> _load({bool reset = false}) async {
     if (!reset && (_loading || _loadingMore || !_hasMore)) return;
-    if (reset) {
-      setState(() {
+    final request = ++_requestId;
+    final offset = reset ? 0 : _chapters.length;
+    setState(() {
+      if (reset) {
         _chapters.clear();
         _loading = true;
         _loadingMore = false;
         _hasMore = false;
-        _error = null;
-      });
-    } else {
-      setState(() {
+      } else {
         _loadingMore = true;
-        _error = null;
-      });
-    }
+      }
+      _error = null;
+    });
 
     try {
       final fetched = await MangaDexChapterApi.fetchChapters(
         widget.mangaId,
         language: _language,
-        offset: reset ? 0 : _chapters.length,
+        offset: offset,
       );
-      if (!mounted) return;
+      if (!mounted || request != _requestId) return;
       setState(() {
         final seen = _chapters.map((chapter) => chapter.id).toSet();
         for (final chapter in fetched) {
@@ -1049,7 +1080,7 @@ class _MangaDexChapterPageState extends State<MangaDexChapterPage> {
         _loadingMore = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || request != _requestId) return;
       setState(() {
         _loading = false;
         _loadingMore = false;
@@ -1059,21 +1090,33 @@ class _MangaDexChapterPageState extends State<MangaDexChapterPage> {
   }
 
   void _changeLanguage(String language) {
-    setState(() {
-      _language = language;
-    });
+    if (!_availableLanguages.contains(language)) return;
+    setState(() => _language = language);
     _load(reset: true);
   }
 
   void _openChapter(MangaDexChapter chapter) {
     Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (_) => MangaDexReaderPage(
-          item: widget.item,
-          chapter: chapter,
-        ),
+        builder: (_) => MangaDexReaderPage(item: widget.item, chapter: chapter),
       ),
     );
+  }
+
+  String _languageLabel(String code) {
+    const labels = {
+      'id': 'Indonesia',
+      'en': 'English',
+      'ko': '한국어',
+      'ja': '日本語',
+      'zh': '中文',
+      'zh-hk': '中文 (Hong Kong)',
+      'zh-mo': '中文 (Macau)',
+      'es': 'Español',
+      'es-la': 'Español (LatAm)',
+      'pt-br': 'Português (Brasil)',
+    };
+    return labels[code] ?? code.toUpperCase();
   }
 
   @override
@@ -1085,10 +1128,12 @@ class _MangaDexChapterPageState extends State<MangaDexChapterPage> {
               tooltip: 'Bahasa chapter',
               initialValue: _language,
               onSelected: _changeLanguage,
-              itemBuilder: (context) => const [
-                PopupMenuItem(value: 'id', child: Text('Indonesia')),
-                PopupMenuItem(value: 'en', child: Text('English')),
-              ],
+              itemBuilder: (context) => _availableLanguages
+                  .map((language) => PopupMenuItem(
+                        value: language,
+                        child: Text(_languageLabel(language)),
+                      ))
+                  .toList(),
               icon: const Icon(Icons.translate_rounded),
             ),
             IconButton(
@@ -1107,10 +1152,11 @@ class _MangaDexChapterPageState extends State<MangaDexChapterPage> {
                     onRetry: () => _load(reset: true),
                   )
                 : _chapters.isEmpty
-                    ? const ErrorPanel(
+                    ? ErrorPanel(
                         icon: Icons.menu_book_outlined,
-                        title: 'Belum ada chapter',
-                        message: 'Belum ditemukan chapter berlabel aman dalam bahasa ini.',
+                        title: 'Chapter belum ditemukan',
+                        message: 'Tidak ada chapter berlabel aman dalam bahasa ' + _languageLabel(_language) + '. Coba bahasa lain yang tersedia pada menu bahasa.',
+                        onRetry: () => _load(reset: true),
                       )
                     : ListView.separated(
                         padding: const EdgeInsets.all(14),
@@ -1134,7 +1180,7 @@ class _MangaDexChapterPageState extends State<MangaDexChapterPage> {
                           final chapter = _chapters[index];
                           final number = chapter.number.isEmpty
                               ? 'Chapter'
-                              : 'Chapter ${chapter.number}';
+                              : 'Chapter ' + chapter.number;
                           return ListTile(
                             contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                             leading: Container(
@@ -1148,19 +1194,17 @@ class _MangaDexChapterPageState extends State<MangaDexChapterPage> {
                               child: const Icon(Icons.menu_book_rounded, color: accent),
                             ),
                             title: Text(
-                              chapter.title.isEmpty
-                                  ? number
-                                  : '$number • ${chapter.title}',
+                              chapter.title.isEmpty ? number : number + ' • ' + chapter.title,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
                             ),
                             subtitle: Text(
                               [
-                                if (chapter.volume.isNotEmpty) 'Vol. ${chapter.volume}',
-                                '${chapter.pageCount} halaman',
+                                if (chapter.volume.isNotEmpty) 'Vol. ' + chapter.volume,
+                                chapter.pageCount.toString() + ' halaman',
                                 if (chapter.scanlationGroup.isNotEmpty)
-                                  'Grup: ${chapter.scanlationGroup}',
+                                  'Grup: ' + chapter.scanlationGroup,
                               ].join(' • '),
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
@@ -1294,12 +1338,24 @@ class _MangaDexReaderPageState extends State<MangaDexReaderPage> {
             if (_verticalMode) {
               return ListView.builder(
                 itemCount: pages.length,
-                itemBuilder: (context, index) => Image.network(
-                  pages[index],
+                itemBuilder: (context, index) => CachedNetworkImage(
+                  imageUrl: pages[index],
                   width: double.infinity,
                   fit: BoxFit.fitWidth,
-                  gaplessPlayback: true,
-                  errorBuilder: (_, __, ___) => Container(
+                  memCacheWidth: 1280,
+                  maxWidthDiskCache: 1280,
+                  fadeInDuration: const Duration(milliseconds: 80),
+                  placeholder: (_, __) => Container(
+                    height: 120,
+                    color: panel,
+                    alignment: Alignment.center,
+                    child: const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: accent),
+                    ),
+                  ),
+                  errorWidget: (_, __, ___) => Container(
                     height: 150,
                     alignment: Alignment.center,
                     color: panel,
@@ -1322,11 +1378,20 @@ class _MangaDexReaderPageState extends State<MangaDexReaderPage> {
                 minScale: 1,
                 maxScale: 4,
                 child: Center(
-                  child: Image.network(
-                    pages[index],
+                  child: CachedNetworkImage(
+                    imageUrl: pages[index],
                     fit: BoxFit.contain,
-                    gaplessPlayback: true,
-                    errorBuilder: (_, __, ___) => TextButton.icon(
+                    memCacheWidth: 1280,
+                    maxWidthDiskCache: 1280,
+                    fadeInDuration: const Duration(milliseconds: 80),
+                    placeholder: (_, __) => const Center(
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: accent),
+                      ),
+                    ),
+                    errorWidget: (_, __, ___) => TextButton.icon(
                       onPressed: _reload,
                       icon: const Icon(Icons.refresh_rounded),
                       label: const Text('Coba muat ulang'),
@@ -2028,25 +2093,24 @@ class SeriesCover extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (url.isEmpty) return const _CoverFallback();
-    return Image.network(
-      url,
+    return CachedNetworkImage(
+      imageUrl: url,
       fit: fit,
       width: double.infinity,
       height: double.infinity,
-      filterQuality: FilterQuality.medium,
-      errorBuilder: (_, __, ___) => const _CoverFallback(),
-      loadingBuilder: (context, child, progress) {
-        if (progress == null) return child;
-        return Container(
-          color: panel2,
-          alignment: Alignment.center,
-          child: const SizedBox(
-            width: 19,
-            height: 19,
-            child: CircularProgressIndicator(strokeWidth: 2, color: accent),
-          ),
-        );
-      },
+      memCacheWidth: 480,
+      maxWidthDiskCache: 480,
+      fadeInDuration: const Duration(milliseconds: 100),
+      placeholder: (_, __) => Container(
+        color: panel2,
+        alignment: Alignment.center,
+        child: const SizedBox(
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(strokeWidth: 2, color: accent),
+        ),
+      ),
+      errorWidget: (_, __, ___) => const _CoverFallback(),
     );
   }
 }
