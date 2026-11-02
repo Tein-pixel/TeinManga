@@ -380,7 +380,7 @@ class CatalogApi {
     int page = 1,
   }) async {
     final cleanQuery = (query ?? '').trim();
-    final cacheKey = '\${cleanQuery.toLowerCase()}|\${types.join(",")}|\$sortBy|\$page';
+    final cacheKey = '${cleanQuery.toLowerCase()}|${types.join(",")}|$sortBy|$page';
     final cached = _cache[cacheKey];
     if (cached != null &&
         DateTime.now().difference(cached.savedAt) < const Duration(minutes: 4)) {
@@ -461,16 +461,16 @@ class CatalogApi {
       'with_boosts=false',
       'limit=$_providerPageSize',
       'page=$page',
-      'sort_by=\${Uri.encodeQueryComponent(sortBy)}',
+      'sort_by=${Uri.encodeQueryComponent(sortBy)}',
     ];
     if (query.isNotEmpty) {
-      params.add('q=\${Uri.encodeQueryComponent(query)}');
+      params.add('q=${Uri.encodeQueryComponent(query)}');
     }
     for (final type in types) {
-      params.add('type=\${Uri.encodeQueryComponent(type)}');
+      params.add('type=${Uri.encodeQueryComponent(type)}');
     }
     final uri = Uri.parse(
-      'https://api.mangabaka.org/v1/series/search?\${params.join('&')}',
+      'https://api.mangabaka.org/v1/series/search?${params.join('&')}',
     );
     final response = await _client
         .get(uri, headers: const {
@@ -479,7 +479,7 @@ class CatalogApi {
         })
         .timeout(const Duration(seconds: 14));
     if (response.statusCode != 200) {
-      throw Exception('MangaBaka HTTP \${response.statusCode}');
+      throw Exception('MangaBaka HTTP ${response.statusCode}');
     }
     final decoded = jsonDecode(utf8.decode(response.bodyBytes));
     if (decoded is! Map || decoded['data'] is! List) {
@@ -500,13 +500,13 @@ class CatalogApi {
   }) async {
     final params = <String>[
       'limit=$_providerPageSize',
-      'offset=\${(page - 1) * _providerPageSize}',
+      'offset=${(page - 1) * _providerPageSize}',
       'contentRating%5B%5D=safe',
       'includes%5B%5D=cover_art',
       'includes%5B%5D=author',
     ];
     if (query.isNotEmpty) {
-      params.add('title=\${Uri.encodeQueryComponent(query)}');
+      params.add('title=${Uri.encodeQueryComponent(query)}');
       params.add('order%5Brelevance%5D=desc');
     } else if (sortBy == 'latest') {
       params.add('order%5BlatestUploadedChapter%5D=desc');
@@ -528,7 +528,7 @@ class CatalogApi {
     if (languages.isEmpty) return const <SeriesItem>[];
 
     final uri = Uri.parse(
-      'https://api.mangadex.org/manga?\${params.join('&')}',
+      'https://api.mangadex.org/manga?${params.join('&')}',
     );
     final response = await _client
         .get(uri, headers: const {
@@ -537,7 +537,7 @@ class CatalogApi {
         })
         .timeout(const Duration(seconds: 14));
     if (response.statusCode != 200) {
-      throw Exception('MangaDex HTTP \${response.statusCode}');
+      throw Exception('MangaDex HTTP ${response.statusCode}');
     }
     final decoded = jsonDecode(utf8.decode(response.bodyBytes));
     if (decoded is! Map || decoded['data'] is! List) {
@@ -594,7 +594,7 @@ class CatalogApi {
         })
         .timeout(const Duration(seconds: 14));
     if (response.statusCode != 200) {
-      throw Exception('Jikan HTTP \${response.statusCode}');
+      throw Exception('Jikan HTTP ${response.statusCode}');
     }
     final decoded = jsonDecode(utf8.decode(response.bodyBytes));
     if (decoded is! Map || decoded['data'] is! List) {
