@@ -210,11 +210,20 @@ fun JSONArray?.toStringList(): List<String> {
 
 fun cleanSynopsis(input: String): String {
     if (input.isBlank()) return ""
-    return input
-        .replace(Regex("""\[([^\]]+)]\((?:https?://[^)]+)\)""")) { it.groupValues[1] }
-        .replace(Regex("""\*\*(.*?)\*\*""")) { it.groupValues[1] }
-        .replace(Regex("""(?m)^\s{0,3}#{1,6}\s*"""), "")
-        .replace(Regex("""(?m)^\s*[-*]\s+"""), "• ")
+    val linkPattern = Regex("""\[([^\]]+)\]\((?:https?://[^)]+)\)""")
+    val headingPattern = Regex("""^#{1,6}\s*""")
+    val bulletPattern = Regex("""^[-*]\s+""")
+
+    return input.lineSequence()
+        .map { rawLine ->
+            var line = rawLine.trim()
+            line = linkPattern.replace(line) { match -> match.groupValues[1] }
+            line = line.replace(Regex("""\*\*(.*?)\*\*""")) { match -> match.groupValues[1] }
+            line = headingPattern.replace(line, "")
+            line = bulletPattern.replace(line, "• ")
+            line
+        }
+        .joinToString("\n")
         .replace(Regex("""\n{3,}"""), "\n\n")
         .trim()
 }

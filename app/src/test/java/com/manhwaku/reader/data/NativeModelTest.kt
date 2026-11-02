@@ -30,6 +30,8 @@ class NativeModelTest {
         )
 
         assertEquals("Original Webtoon:\nNaver Webtoon\n\nSynopsis\nA story.", formatted)
+        assertEquals("Heading\nA bold title", cleanSynopsis("# Heading\n**A bold title**"))
+        assertEquals("Anchor", cleanSynopsis("[Anchor](https://example.test/path)"))
     }
 
     @Test
