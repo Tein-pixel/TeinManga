@@ -672,6 +672,7 @@ private fun DetailScreen(
     var selectedLanguage by remember(initial.id) { mutableStateOf("id") }
     var autoFallback by remember(initial.id) { mutableStateOf(false) }
     var hasMore by remember(initial.id) { mutableStateOf(false) }
+    var nextChapterOffset by remember(initial.id) { mutableIntStateOf(0) }
     var moreLoading by remember(initial.id) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val uriHandler = LocalUriHandler.current
@@ -709,21 +710,28 @@ private fun DetailScreen(
         loadingMatch = false
     }
 
+    fun applyChapterPage(result: com.manhwaku.reader.data.ChapterPage) {
+        chapters = result.chapters
+        nextChapterOffset = result.nextOffset
+        hasMore = result.hasMore
+        if (result.usedFallback) {
+            autoFallback = true
+            selectedLanguage = "all"
+        }
+    }
+
     LaunchedEffect(mangaDexId, selectedLanguage) {
         val id = mangaDexId ?: return@LaunchedEffect
         val requestedLanguage = selectedLanguage
         chaptersLoading = true
         chaptersError = ""
         chapters = emptyList()
+        hasMore = false
+        nextChapterOffset = 0
         if (requestedLanguage != "all") autoFallback = false
         try {
             val result = repository.chapters(id, requestedLanguage, 0)
-            chapters = result.first
-            hasMore = result.first.size == 100
-            if (result.second) {
-                autoFallback = true
-                selectedLanguage = "all"
-            }
+            applyChapterPage(result)
         } catch (error: Exception) {
             chaptersError = error.message ?: "Chapter gagal dimuat."
         } finally {
@@ -896,16 +904,21 @@ private fun DetailScreen(
                     }
                     IconButton(onClick = {
                         scope.launch {
+                            if (chaptersLoading) return@launch
                             if (selectedLanguage != "all") autoFallback = false
                             chaptersLoading = true
+                            chaptersError = ""
+                            chapters = emptyList()
+                            hasMore = false
+                            nextChapterOffset = 0
                             try {
                                 val result = repository.chapters(mangaDexId.orEmpty(), selectedLanguage, 0)
-                                chapters = result.first
-                                if (result.second) { autoFallback = true; selectedLanguage = "all" }
-                                chaptersError = ""
+                                applyChapterPage(result)
                             } catch (e: Exception) {
                                 chaptersError = e.message ?: "Chapter gagal dimuat."
-                            } finally { chaptersLoading = false }
+                            } finally {
+                                chaptersLoading = false
+                            }
                         }
                     }) { Icon(Icons.Default.Refresh, "Muat ulang", tint = Ink) }
                 }
@@ -930,14 +943,19 @@ private fun DetailScreen(
                     }
                     chaptersError.isNotBlank() && chapters.isEmpty() -> ErrorState(chaptersError, "Coba lagi") {
                         scope.launch {
+                            if (chaptersLoading) return@launch
                             chaptersLoading = true
+                            chaptersError = ""
+                            hasMore = false
+                            nextChapterOffset = 0
                             try {
                                 val result = repository.chapters(mangaDexId!!, selectedLanguage, 0)
-                                chapters = result.first
-                                if (result.second) { autoFallback = true; selectedLanguage = "all" }
-                                chaptersError = ""
-                            } catch (e: Exception) { chaptersError = e.message ?: "Chapter gagal dimuat." }
-                            finally { chaptersLoading = false }
+                                applyChapterPage(result)
+                            } catch (e: Exception) {
+                                chaptersError = e.message ?: "Chapter gagal dimuat."
+                            } finally {
+                                chaptersLoading = false
+                            }
                         }
                     }
                     chapters.isEmpty() -> EmptyState(
@@ -979,19 +997,35 @@ private fun DetailScreen(
                                 }
                                 HorizontalDivider(color = Stroke, thickness = .5.dp)
                             }
+                            if (chaptersError.isNotBlank() && chapters.isNotEmpty()) item {
+                                Text(
+                                    chaptersError,
+                                    color = Muted,
+                                    fontSize = 10.sp,
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                                )
+                            }
                             if (hasMore) item {
                                 OutlinedButton(
                                     onClick = {
                                         scope.launch {
+                                            if (moreLoading || chaptersLoading) return@launch
                                             moreLoading = true
+                                            chaptersError = ""
+                                            val requestedOffset = nextChapterOffset
                                             try {
-                                                val result = repository.chapters(mangaDexId!!, selectedLanguage, chapters.size)
-                                                chapters = (chapters + result.first).distinctBy { it.id }
-                                                hasMore = result.first.size == 100
-                                            } catch (e: Exception) { chaptersError = e.message ?: "Tidak dapat memuat chapter berikutnya." }
-                                            finally { moreLoading = false }
+                                                val result = repository.chapters(mangaDexId!!, selectedLanguage, requestedOffset)
+                                                chapters = (chapters + result.chapters).distinctBy { it.id }
+                                                nextChapterOffset = result.nextOffset
+                                                hasMore = result.hasMore && result.nextOffset > requestedOffset
+                                            } catch (e: Exception) {
+                                                chaptersError = e.message ?: "Tidak dapat memuat chapter berikutnya."
+                                            } finally {
+                                                moreLoading = false
+                                            }
                                         }
                                     },
+                                    enabled = !moreLoading && !chaptersLoading,
                                     modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
                                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Accent),
                                     border = androidx.compose.foundation.BorderStroke(1.dp, Stroke)
