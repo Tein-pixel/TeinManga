@@ -1529,7 +1529,7 @@ class _MangaDexChapterPageState extends State<MangaDexChapterPage> {
                           message: 'Belum ada chapter aman dari sumber yang terhubung.',
                           onRetry: () => _load(reset: true),
                           secondary: widget.item.publisherUrl.isNotEmpty
-                              ? _publisherButton(widget.item)
+                              ? PublisherLinkButton(publisherUrl: widget.item.publisherUrl)
                               : null,
                         )
                       : ListView.separated(
@@ -3411,36 +3411,6 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
   }
 
 
-  Widget _publisherButton(SeriesItem item) {
-    final url = Uri.tryParse(item.publisherUrl);
-    if (url == null ||
-        url.scheme != 'https' ||
-        url.host.isEmpty ||
-        url.userInfo.isNotEmpty) {
-      return const SizedBox.shrink();
-    }
-    return Padding(
-      padding: const EdgeInsets.only(top: 12),
-      child: OutlinedButton.icon(
-        onPressed: () async {
-          final ok = await launchUrl(url, mode: LaunchMode.externalApplication);
-          if (!ok && mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Tautan penerbit tidak dapat dibuka')),
-            );
-          }
-        },
-        icon: const Icon(Icons.open_in_new_rounded, size: 17),
-        label: const Text('Buka penerbit'),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: accent,
-          side: const BorderSide(color: stroke),
-          minimumSize: const Size.fromHeight(46),
-        ),
-      ),
-    );
-  }
-
   Widget _buildInfoTab(SeriesItem item) {
     final description = item.description.trim().isEmpty ||
             item.description == 'Deskripsi belum tersedia.'
@@ -3465,7 +3435,7 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
         if (item.language != 'unknown' && item.language.isNotEmpty)
           _InfoRow(label: 'Bahasa asli', value: item.language.toUpperCase()),
         if (item.source.isNotEmpty) _InfoRow(label: 'Metadata', value: item.source),
-        if (item.publisherUrl.isNotEmpty) _publisherButton(item),
+        if (item.publisherUrl.isNotEmpty) PublisherLinkButton(publisherUrl: item.publisherUrl),
       ],
     );
   }
@@ -3483,7 +3453,7 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
       icon: Icons.menu_book_outlined,
       title: 'Chapter belum tersedia',
       message: 'Belum ada sumber chapter yang cocok untuk judul ini.',
-      secondary: item.publisherUrl.isNotEmpty ? _publisherButton(item) : null,
+      secondary: item.publisherUrl.isNotEmpty ? PublisherLinkButton(publisherUrl: item.publisherUrl) : null,
     );
   }
 
@@ -3543,6 +3513,37 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class PublisherLinkButton extends StatelessWidget {
+  const PublisherLinkButton({super.key, required this.publisherUrl});
+  final String publisherUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    final url = Uri.tryParse(publisherUrl);
+    if (url == null ||
+        url.scheme != 'https' ||
+        url.host.isEmpty ||
+        url.userInfo.isNotEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: OutlinedButton.icon(
+        onPressed: () {
+          launchUrl(url, mode: LaunchMode.externalApplication);
+        },
+        icon: const Icon(Icons.open_in_new_rounded, size: 17),
+        label: const Text('Buka penerbit'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: accent,
+          side: const BorderSide(color: stroke),
+          minimumSize: const Size.fromHeight(46),
         ),
       ),
     );
