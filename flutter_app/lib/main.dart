@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -456,24 +457,57 @@ class CatalogApi {
   static final http.Client _client = http.Client();
   static const int pageSize = 24;
   static const int _providerPageSize = 12;
+  static const Duration _providerTimeout = Duration(seconds: 7);
+  static const Duration _memoryTtl = Duration(minutes: 4);
+  static const Duration _diskMaxAge = Duration(days: 5);
   static final Map<String, _CatalogCacheEntry> _cache = {};
-  static DateTime? _lastJikanRequest;
-  static Future<void> _jikanQueue = Future<void>.value();
+  static final Map<String, Future<List<SeriesItem>>> _inFlight = {};
 
-  static Future<void> _paceJikan() {
-    final next = _jikanQueue.then((_) async {
-      final last = _lastJikanRequest;
-      if (last != null) {
-        final elapsed = DateTime.now().difference(last);
-        const minimumGap = Duration(milliseconds: 450);
-        if (elapsed < minimumGap) {
-          await Future.delayed(minimumGap - elapsed);
-        }
+  static String _diskKey(String cacheKey) =>
+      'catalog_cache_' + _stableId(cacheKey).toString();
+
+  static Future<List<SeriesItem>?> _readDiskCache(String cacheKey) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_diskKey(cacheKey));
+      if (raw == null || raw.isEmpty) return null;
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map || decoded['items'] is! List) return null;
+      final savedAt = DateTime.fromMillisecondsSinceEpoch(_toInt(decoded['savedAt']));
+      if (DateTime.now().difference(savedAt) > _diskMaxAge) return null;
+      return (decoded['items'] as List)
+          .whereType<Map>()
+          .map((row) => SeriesItem.fromMap(Map<String, dynamic>.from(row)))
+          .where((item) => item.id > 0 && item.contentRating == 'safe')
+          .toList();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> _writeDiskCache(String cacheKey, List<SeriesItem> items) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = _diskKey(cacheKey);
+      await prefs.setString(
+        key,
+        jsonEncode({
+          'savedAt': DateTime.now().millisecondsSinceEpoch,
+          'items': items.map((item) => item.toMap()).toList(),
+        }),
+      );
+      final index = prefs.getStringList('catalog_cache_index') ?? <String>[];
+      index.remove(key);
+      index.insert(0, key);
+      const maxEntries = 12;
+      final removed = index.skip(maxEntries).toList();
+      await prefs.setStringList('catalog_cache_index', index.take(maxEntries).toList());
+      for (final oldKey in removed) {
+        await prefs.remove(oldKey);
       }
-      _lastJikanRequest = DateTime.now();
-    });
-    _jikanQueue = next;
-    return next;
+    } catch (_) {
+      // Disk cache is an optimization; storage failure must not break requests.
+    }
   }
 
   static Future<List<SeriesItem>> fetch({
@@ -481,117 +515,199 @@ class CatalogApi {
     List<String> types = const [],
     String sortBy = 'trending_7d',
     int page = 1,
+    bool forceRefresh = false,
   }) async {
     if (testMode) return const <SeriesItem>[];
     final cleanQuery = (query ?? '').trim();
-    final cacheKey = '${cleanQuery.toLowerCase()}|${types.join(",")}|$sortBy|$page';
-    final cached = _cache[cacheKey];
-    if (cached != null &&
-        DateTime.now().difference(cached.savedAt) < const Duration(minutes: 4)) {
-      return cached.items;
+    final normalizedTypes = types.map((value) => value.toLowerCase()).toList()..sort();
+    final cacheKey = '${cleanQuery.toLowerCase()}|${normalizedTypes.join(",")}|${sortBy}|${page}';
+
+    if (!forceRefresh) {
+      final memory = _cache[cacheKey];
+      if (memory != null && DateTime.now().difference(memory.savedAt) < _memoryTtl) {
+        return memory.items;
+      }
+      final diskItems = await _readDiskCache(cacheKey);
+      if (diskItems != null) {
+        final entry = _CatalogCacheEntry(
+          List<SeriesItem>.unmodifiable(diskItems),
+          DateTime.now(),
+        );
+        _cache[cacheKey] = entry;
+        unawaited(_refreshInBackground(
+          cacheKey: cacheKey,
+          query: cleanQuery,
+          types: types,
+          sortBy: sortBy,
+          page: page,
+        ));
+        return entry.items;
+      }
     }
 
-    var successfulSources = 0;
-    Future<List<SeriesItem>> attempt(
-      Future<List<SeriesItem>> Function() request,
-    ) async {
+    final existing = _inFlight[cacheKey];
+    if (existing != null) return existing;
+    final request = _fetchRemote(
+      cacheKey: cacheKey,
+      query: cleanQuery,
+      types: types,
+      sortBy: sortBy,
+      page: page,
+    );
+    _inFlight[cacheKey] = request;
+    try {
+      return await request;
+    } finally {
+      _inFlight.remove(cacheKey);
+    }
+  }
+
+  static Future<void> _refreshInBackground({
+    required String cacheKey,
+    required String query,
+    required List<String> types,
+    required String sortBy,
+    required int page,
+  }) async {
+    if (_inFlight.containsKey(cacheKey)) return;
+    final request = _fetchRemote(
+      cacheKey: cacheKey,
+      query: query,
+      types: types,
+      sortBy: sortBy,
+      page: page,
+    );
+    _inFlight[cacheKey] = request;
+    try {
+      await request;
+    } catch (_) {
+      // Keep cached results when network refresh fails.
+    } finally {
+      _inFlight.remove(cacheKey);
+    }
+  }
+
+  static Future<List<SeriesItem>> _fetchRemote({
+    required String cacheKey,
+    required String query,
+    required List<String> types,
+    required String sortBy,
+    required int page,
+  }) async {
+    var successCount = 0;
+    Future<List<SeriesItem>> attempt(Future<List<SeriesItem>> Function() request) async {
       try {
         final result = await request();
-        successfulSources++;
+        successCount++;
         return result;
       } catch (_) {
         return const <SeriesItem>[];
       }
     }
 
+    // Two documented catalogue sources run concurrently. Jikan is deliberately
+    // not on the first-load path because its public API is rate-limited.
     final batches = await Future.wait<List<SeriesItem>>([
-      attempt(() => _fetchMangaBaka(
-            query: cleanQuery,
-            types: types,
-            sortBy: sortBy,
-            page: page,
-          )),
-      attempt(() => _fetchMangaDex(
-            query: cleanQuery,
-            types: types,
-            sortBy: sortBy,
-            page: page,
-          )),
-      attempt(() => _fetchJikan(
-            query: cleanQuery,
-            types: types,
-            sortBy: sortBy,
-            page: page,
-          )),
+      attempt(() => _fetchMangaDex(query: query, types: types, sortBy: sortBy, page: page)),
+      attempt(() => _fetchMangaBakaV2(query: query, types: types, sortBy: sortBy, page: page)),
     ]);
 
-    if (successfulSources == 0) {
-      throw Exception('Semua sumber katalog sedang tidak merespons. Coba lagi nanti.');
+    if (successCount == 0) {
+      throw Exception('Sumber katalog tidak merespons. Data tersimpan tetap dapat dibuka; coba segarkan lagi.');
     }
 
     final merged = <SeriesItem>[];
+    final byTitle = <String, int>{};
     final seenIds = <int>{};
-    final seenTitles = <String>{};
+
     for (final batch in batches) {
       for (final item in batch) {
-        final normalized = item.title
-            .toLowerCase()
-            .replaceAll(RegExp(r'[^a-z0-9]'), '');
-        if (item.id <= 0 || item.title.isEmpty || item.contentRating != 'safe') {
+        if (item.id <= 0 || item.title.isEmpty || item.contentRating != 'safe') continue;
+        final normalized = item.title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+        if (normalized.isEmpty) continue;
+        final existingIndex = byTitle[normalized];
+
+        if (existingIndex != null) {
+          final existing = merged[existingIndex];
+          final useIncoming = existing.source != 'MangaDex' && item.source == 'MangaDex';
+          final primary = useIncoming ? item : existing;
+          final supplement = useIncoming ? existing : item;
+          merged[existingIndex] = SeriesItem(
+            id: primary.id,
+            title: primary.title,
+            type: primary.type,
+            url: primary.url,
+            cover: primary.cover.isNotEmpty ? primary.cover : supplement.cover,
+            description: primary.description.isNotEmpty &&
+                    primary.description != 'Deskripsi belum tersedia.'
+                ? primary.description
+                : supplement.description,
+            status: primary.status == 'unknown' ? supplement.status : primary.status,
+            rating: primary.rating ?? supplement.rating,
+            author: primary.author.isNotEmpty ? primary.author : supplement.author,
+            language: primary.language == 'unknown' ? supplement.language : primary.language,
+            contentRating: primary.contentRating,
+            source: primary.source,
+            availableTranslatedLanguages:
+                primary.availableTranslatedLanguages.isNotEmpty
+                    ? primary.availableTranslatedLanguages
+                    : supplement.availableTranslatedLanguages,
+          );
+          seenIds.add(item.id);
           continue;
         }
-        if (seenIds.add(item.id) && seenTitles.add(normalized)) {
+        if (seenIds.add(item.id)) {
+          byTitle[normalized] = merged.length;
           merged.add(item);
         }
       }
     }
 
-    _cache[cacheKey] = _CatalogCacheEntry(
-      List<SeriesItem>.unmodifiable(merged),
-      DateTime.now(),
-    );
+    final immutable = List<SeriesItem>.unmodifiable(merged);
+    _cache[cacheKey] = _CatalogCacheEntry(immutable, DateTime.now());
     if (_cache.length > 80) _cache.remove(_cache.keys.first);
-    return merged;
+    await _writeDiskCache(cacheKey, immutable);
+    return immutable;
   }
 
-  static Future<List<SeriesItem>> _fetchMangaBaka({
+  static Future<List<SeriesItem>> _fetchMangaBakaV2({
     required String query,
     required List<String> types,
     required String sortBy,
     required int page,
   }) async {
-    final params = <String>[
-      'content_rating=safe',
-      'with_boosts=false',
-      'limit=$_providerPageSize',
-      'page=$page',
-      'sort_by=${Uri.encodeQueryComponent(sortBy)}',
-    ];
+    if (types.contains('webtoon')) return const <SeriesItem>[];
+    final params = <String>['content_rating=safe', 'limit=$_providerPageSize', 'page=$page'];
     if (query.isNotEmpty) {
       params.add('q=${Uri.encodeQueryComponent(query)}');
+    } else {
+      final safeSort = sortBy == 'latest' ? 'latest' : 'trending_7d';
+      params.add('sort_by=$safeSort');
     }
     for (final type in types) {
-      params.add('type=${Uri.encodeQueryComponent(type)}');
+      final apiType = type == 'lightnovel' ? 'novel' : type;
+      if (const {'manga', 'manhwa', 'manhua', 'novel', 'oel', 'other'}.contains(apiType)) {
+        params.add('type=${Uri.encodeQueryComponent(apiType)}');
+      }
     }
-    final uri = Uri.parse(
-      'https://api.mangabaka.org/v1/series/search?${params.join('&')}',
-    );
+
+    final uri = Uri.parse('https://api.mangabaka.org/v2/series/search?${params.join('&')}');
     final response = await _client
         .get(uri, headers: const {
           'Accept': 'application/json',
-          'User-Agent': 'ManhwaKu/2.4 Android',
+          'User-Agent': 'ManhwaKu/2.6 Android',
         })
-        .timeout(const Duration(seconds: 14));
+        .timeout(_providerTimeout);
     if (response.statusCode != 200) {
       throw Exception('MangaBaka HTTP ${response.statusCode}');
     }
     final decoded = jsonDecode(utf8.decode(response.bodyBytes));
     if (decoded is! Map || decoded['data'] is! List) {
-      throw const FormatException('Format MangaBaka tidak dikenali.');
+      throw const FormatException('Format MangaBaka v2 tidak dikenali.');
     }
     return (decoded['data'] as List)
         .whereType<Map>()
-        .map((row) => SeriesItem.fromJson(Map<String, dynamic>.from(row)))
+        .map((row) => SeriesItem.fromMangaBakaV2(Map<String, dynamic>.from(row)))
         .where((item) => item.id > 0 && item.contentRating == 'safe')
         .toList();
   }
@@ -619,7 +735,8 @@ class CatalogApi {
     }
 
     final languages = <String>{};
-    if (types.isEmpty) {
+    final isWebtoon = types.contains('webtoon');
+    if (types.isEmpty || isWebtoon) {
       languages.addAll({'ja', 'ko', 'zh'});
     } else {
       if (types.contains('manga')) languages.add('ja');
@@ -629,17 +746,18 @@ class CatalogApi {
     for (final language in languages) {
       params.add('originalLanguage%5B%5D=$language');
     }
+    if (isWebtoon) {
+      params.add('includedTags%5B%5D=e197df38-d0e7-43b5-9b09-2842d0c326dd');
+    }
     if (languages.isEmpty) return const <SeriesItem>[];
 
-    final uri = Uri.parse(
-      'https://api.mangadex.org/manga?${params.join('&')}',
-    );
+    final uri = Uri.parse('https://api.mangadex.org/manga?${params.join('&')}');
     final response = await _client
         .get(uri, headers: const {
           'Accept': 'application/json',
-          'User-Agent': 'ManhwaKu/2.4 (Android; safe-catalog)',
+          'User-Agent': 'ManhwaKu/2.6 (Android; safe-catalog)',
         })
-        .timeout(const Duration(seconds: 14));
+        .timeout(_providerTimeout);
     if (response.statusCode != 200) {
       throw Exception('MangaDex HTTP ${response.statusCode}');
     }
@@ -649,72 +767,9 @@ class CatalogApi {
     }
     return (decoded['data'] as List)
         .whereType<Map>()
-        .map((row) => SeriesItem.fromMangaDex(
-              Map<String, dynamic>.from(row),
-            ))
+        .map((row) => SeriesItem.fromMangaDex(Map<String, dynamic>.from(row)))
         .where((item) => item.id > 0 && item.contentRating == 'safe')
         .toList();
-  }
-
-  static Future<List<SeriesItem>> _fetchJikan({
-    required String query,
-    required List<String> types,
-    required String sortBy,
-    required int page,
-  }) async {
-    await _paceJikan();
-    const typeMap = <String, String>{
-      'manga': 'manga',
-      'manhwa': 'manhwa',
-      'manhua': 'manhua',
-      'novel': 'novel',
-      'lightnovel': 'lightnovel',
-      'oel': 'oel',
-      'webtoon': 'webtoon',
-    };
-    final selectedTypes = types
-        .map((value) => typeMap[value])
-        .whereType<String>()
-        .toList();
-    final path = query.isEmpty ? '/v4/top/manga' : '/v4/manga';
-    final params = <String, String>{
-      'limit': '$_providerPageSize',
-      'page': '$page',
-      'sfw': 'true',
-    };
-    if (query.isNotEmpty) {
-      params['q'] = query;
-    } else {
-      params['filter'] = sortBy == 'latest' ? 'publishing' : 'bypopularity';
-    }
-    if (selectedTypes.length == 1) {
-      params['type'] = selectedTypes.first;
-    }
-    final uri = Uri.https('api.jikan.moe', path, params);
-    final response = await _client
-        .get(uri, headers: const {
-          'Accept': 'application/json',
-          'User-Agent': 'ManhwaKu/2.4 (safe catalog client)',
-        })
-        .timeout(const Duration(seconds: 14));
-    if (response.statusCode != 200) {
-      throw Exception('Jikan HTTP ${response.statusCode}');
-    }
-    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
-    if (decoded is! Map || decoded['data'] is! List) {
-      throw const FormatException('Format Jikan tidak dikenali.');
-    }
-    final items = <SeriesItem>[];
-    for (final row in (decoded['data'] as List).whereType<Map>()) {
-      final data = Map<String, dynamic>.from(row);
-      if (_hasRestrictedTags(data['genres']) ||
-          _hasRestrictedTags(data['themes']) ||
-          _hasRestrictedTags(data['demographics'])) {
-        continue;
-      }
-      items.add(SeriesItem.fromJikan(data));
-    }
-    return items;
   }
 }
 
