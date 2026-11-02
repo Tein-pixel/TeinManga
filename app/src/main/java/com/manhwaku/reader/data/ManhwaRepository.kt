@@ -79,7 +79,9 @@ class ManhwaRepository {
     ): List<Series> = withContext(Dispatchers.IO) {
         val cleanQuery = canonicalTitle(query).trim()
         val mangaBaka = runCatching { searchMangaBaka(cleanQuery, page, type, latest) }.getOrDefault(emptyList())
-        val mangaDex = runCatching { searchMangaDex(cleanQuery, page, type, latest) }.getOrDefault(emptyList())
+        val mangaDex = if (type in setOf("all", "manga", "manhwa", "manhua", "webtoon")) {
+            runCatching { searchMangaDex(cleanQuery, page, type, latest) }.getOrDefault(emptyList())
+        } else emptyList()
 
         val merged = LinkedHashMap<String, Series>()
         mangaBaka.forEach { item ->
@@ -111,6 +113,7 @@ class ManhwaRepository {
         type: String,
         latest: Boolean
     ): List<Series> {
+        if (type == "webtoon") return emptyList()
         val params = mutableListOf(
             "limit=24",
             "page=${page.coerceAtLeast(1)}",
@@ -155,11 +158,15 @@ class ManhwaRepository {
             "manga" -> params += "originalLanguage%5B%5D=ja"
             "manhwa" -> params += "originalLanguage%5B%5D=ko"
             "manhua" -> params += "originalLanguage%5B%5D=zh"
-            "all" -> {
+            "all", "webtoon" -> {
                 params += "originalLanguage%5B%5D=ja"
                 params += "originalLanguage%5B%5D=ko"
                 params += "originalLanguage%5B%5D=zh"
             }
+            else -> return emptyList()
+        }
+        if (type == "webtoon") {
+            params += "includedTags%5B%5D=e197df38-d0e7-43b5-9b09-2842d0c326dd"
         }
         val json = requestJson("https://api.mangadex.org/manga?${params.joinToString("&")}", mangaDex = true)
         val data = json.optJSONArray("data") ?: return emptyList()
