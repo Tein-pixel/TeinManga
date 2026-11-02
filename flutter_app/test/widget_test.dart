@@ -138,6 +138,47 @@ void main() {
     expect(item.publisherUrl, 'https://reader.example/series/1');
   });
 
+  test('MangaBaka documented links expose HTTPS publisher pages', () {
+    final item = SeriesItem.fromMangaBakaV2({
+      'id': 126,
+      'titles': [
+        {'language': 'en', 'title': 'Legacy publisher sample', 'is_primary': true},
+      ],
+      'type': 'manhwa',
+      'original_language': 'ko',
+      'content_rating': 'safe',
+      'links': [
+        {'type': 'publisher', 'url': 'https://publisher.example/series/126'},
+        {'type': 'webplatform', 'url': 'https://unverified.example/read/126'},
+      ],
+    });
+    expect(item.publisherUrl, 'https://publisher.example/series/126');
+  });
+
+  test('Known series resolve to official publisher pages', () {
+    final lookism = SeriesItem(
+      id: 127, title: 'Lookism (Pre-Serialization)', type: 'manhwa',
+      url: 'https://example.invalid/lookism', cover: '', description: '',
+      status: 'completed', rating: null, author: '', language: 'ko',
+      contentRating: 'safe', source: 'unit-test',
+    );
+    expect(
+      OfficialReadingSources.urlFor(lookism),
+      'https://www.webtoons.com/id/action/lookism/list?title_no=532',
+    );
+    expect(OfficialReadingSources.labelFor(lookism), contains('16+'));
+
+    final soloLeveling = SeriesItem(
+      id: 128, title: 'Na Honjaman Level-Up', type: 'manhwa',
+      url: 'https://example.invalid/solo-leveling', cover: '', description: '',
+      status: 'completed', rating: null, author: '', language: 'ko',
+      contentRating: 'safe', source: 'unit-test',
+    );
+    expect(
+      OfficialReadingSources.urlFor(soloLeveling),
+      'https://webtoon.kakao.com/content/2320/2320',
+    );
+  });
   test('Indonesian is the first chapter-language preference', () {
     expect(MangaDexChapterPage.preferredLanguage, 'id');
   });
