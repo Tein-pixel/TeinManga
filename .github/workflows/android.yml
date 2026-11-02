@@ -1,4 +1,4 @@
-name: Android Build
+name: ManhwaKu Kotlin Android
 
 on:
   push:
@@ -33,7 +33,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: TeinManga-debug-apk
+          name: ManhwaKu-Kotlin-v3.0.0-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
