@@ -1222,7 +1222,7 @@ class MangaBakaDetailsApi {
       if (data['state']?.toString().toLowerCase() == 'merged') {
         final replacementId = _toInt(data['merged_with']);
         if (replacementId > 0 && replacementId != id && mergeDepth < 2) {
-          return _fetch(replacementId, mergeDepth: mergeDepth + 1);
+          return await _fetch(replacementId, mergeDepth: mergeDepth + 1);
         }
         return null;
       }
