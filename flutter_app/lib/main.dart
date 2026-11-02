@@ -809,6 +809,102 @@ class MangaBakaDetailsApi {
   static final http.Client _client = http.Client();
   static final Map<int, SeriesItem> _cache = {};
   static final Map<int, Future<SeriesItem?>> _inFlight = {};
+  static final Map<String, Future<SeriesItem?>> _titleLookups = {};
+
+  static String _normalizeTitle(String value) =>
+      value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+
+  static Future<SeriesItem?> fetchForItem(SeriesItem item) async {
+    final id = item.mangaBakaId ??
+        (item.source == 'MangaBaka' ? item.id : null);
+    if (id != null && id > 0) return fetch(id);
+    return findByTitle(item.title);
+  }
+
+  static Future<SeriesItem?> findByTitle(String title) async {
+    final query = title.trim();
+    if (query.length < 2 || query.length > 100) return null;
+    final key = _normalizeTitle(query);
+    final existing = _titleLookups[key];
+    if (existing != null) return existing;
+
+    final request = _searchAndFetch(query);
+    _titleLookups[key] = request;
+    try {
+      return await request;
+    } finally {
+      _titleLookups.remove(key);
+    }
+  }
+
+  static Future<SeriesItem?> _searchAndFetch(String title) async {
+    try {
+      final uri = Uri.https(
+        'api.mangabaka.org',
+        '/v2/series/search',
+        {
+          'q': title,
+          'content_rating': 'safe',
+          'limit': '8',
+        },
+      );
+      final response = await _client
+          .get(uri, headers: const {
+            'Accept': 'application/json',
+            'User-Agent': 'ManhwaKu/2.6 Android',
+          })
+          .timeout(const Duration(seconds: 5));
+      if (response.statusCode != 200) return null;
+      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+      if (decoded is! Map || decoded['data'] is! List) return null;
+
+      final target = _normalizeTitle(title);
+      final candidates = <Map<String, dynamic>>[];
+      for (final row in (decoded['data'] as List).whereType<Map>()) {
+        final data = Map<String, dynamic>.from(row);
+        if (_hasRestrictedTags(data['tags'])) continue;
+        final titles = data['titles'] is List
+            ? (data['titles'] as List).whereType<Map>()
+            : const <Map>[];
+        final normalizedTitles = <String>[
+          _normalizeTitle(_firstText([data['title']])),
+          _normalizeTitle(_firstText([data['romanized_title']])),
+          _normalizeTitle(_firstText([data['native_title']])),
+          ...titles.map((entry) => _normalizeTitle(_firstText([entry['title']]))),
+        ].where((value) => value.isNotEmpty).toList();
+
+        final matched = normalizedTitles.any((candidate) {
+          if (candidate == target) return true;
+          if (candidate.length < 5 || target.length < 5) return false;
+          return candidate.startsWith(target) || target.startsWith(candidate);
+        });
+        if (matched) candidates.add(data);
+      }
+
+      if (candidates.isEmpty) return null;
+      candidates.sort((left, right) {
+        final leftId = _toInt(left['id']);
+        final rightId = _toInt(right['id']);
+        final leftTitles = left['titles'] is List ? left['titles'] as List : const [];
+        final rightTitles = right['titles'] is List ? right['titles'] as List : const [];
+        final leftHasEnglish = leftTitles.whereType<Map>().any(
+          (entry) => entry['language'] == 'en' && entry['is_primary'] == true,
+        );
+        final rightHasEnglish = rightTitles.whereType<Map>().any(
+          (entry) => entry['language'] == 'en' && entry['is_primary'] == true,
+        );
+        if (leftHasEnglish != rightHasEnglish) {
+          return leftHasEnglish ? -1 : 1;
+        }
+        return leftId.compareTo(rightId);
+      });
+
+      final matchedId = _toInt(candidates.first['id']);
+      return matchedId > 0 ? fetch(matchedId) : null;
+    } catch (_) {
+      return null;
+    }
+  }
 
   static Future<SeriesItem?> fetch(int id) async {
     if (id <= 0) return null;
@@ -829,27 +925,31 @@ class MangaBakaDetailsApi {
   }
 
   static Future<SeriesItem?> _fetch(int id) async {
-    final uri = Uri.https(
-      'api.mangabaka.org',
-      '/v2/series/$id',
-      const {'schema': 'full'},
-    );
-    final response = await _client
-        .get(uri, headers: const {
-          'Accept': 'application/json',
-          'User-Agent': 'ManhwaKu/2.6 Android',
-        })
-        .timeout(const Duration(seconds: 6));
-    if (response.statusCode != 200) return null;
+    try {
+      final uri = Uri.https(
+        'api.mangabaka.org',
+        '/v2/series/$id',
+        const {'schema': 'full'},
+      );
+      final response = await _client
+          .get(uri, headers: const {
+            'Accept': 'application/json',
+            'User-Agent': 'ManhwaKu/2.6 Android',
+          })
+          .timeout(const Duration(seconds: 6));
+      if (response.statusCode != 200) return null;
 
-    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
-    if (decoded is! Map) return null;
-    final raw = decoded['data'] is Map ? decoded['data'] : decoded;
-    if (raw is! Map) return null;
-    final data = Map<String, dynamic>.from(raw);
-    final item = SeriesItem.fromMangaBakaV2(data);
-    if (item.id <= 0 || item.contentRating != 'safe') return null;
-    return item;
+      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+      if (decoded is! Map) return null;
+      final raw = decoded['data'] is Map ? decoded['data'] : decoded;
+      if (raw is! Map) return null;
+      final data = Map<String, dynamic>.from(raw);
+      final item = SeriesItem.fromMangaBakaV2(data);
+      if (item.id <= 0 || item.contentRating != 'safe') return null;
+      return item;
+    } catch (_) {
+      return null;
+    }
   }
 }
 
@@ -2724,15 +2824,12 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
 
 
   Future<void> _enrichMetadata() async {
-    final id = widget.item.mangaBakaId ??
-        (widget.item.source == 'MangaBaka' ? widget.item.id : null);
-    if (id == null || id <= 0) return;
     if (widget.item.description != 'Deskripsi belum tersedia.' &&
         widget.item.cover.isNotEmpty) return;
 
     if (mounted) setState(() => _enriching = true);
     try {
-      final full = await MangaBakaDetailsApi.fetch(id);
+      final full = await MangaBakaDetailsApi.fetchForItem(widget.item);
       if (!mounted || full == null) return;
       final base = _displayItem;
       final hasSynopsis = base.description.isNotEmpty &&
