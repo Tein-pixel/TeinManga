@@ -217,7 +217,12 @@ class ManhwaRepository {
     }
 
     suspend fun fullMetadata(item: Series): Series? = withContext(Dispatchers.IO) {
-        val id = item.mangaBakaId ?: return@withContext null
+        val canonical = canonicalTitle(item.title)
+        val id = item.mangaBakaId ?: runCatching {
+            searchMangaBaka(canonical, 1, "all", latest = false)
+                .firstOrNull { normalizeTitle(it.title) == normalizeTitle(canonical) }
+                ?.mangaBakaId
+        }.getOrNull() ?: return@withContext null
         var currentId = id
         repeat(3) { depth ->
             val response = runCatching {
