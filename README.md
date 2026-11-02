@@ -7,21 +7,21 @@ Flutter Android app for Android 10+ (application ID: com.manhwaku.reader).
 - Live catalogue discovery for manga, manhwa, manhua, novels/light novels, OEL and other media types.
 - Search by series title, safe-content filter, trending/latest/popularity sorting, and paged loading.
 - Series details with available cover, synopsis, author, status, and score metadata.
-- WEBTOON Indonesia featured series shortcuts and a direct in-app view of its popular ranking.
+- Webtoon discovery uses catalogue tags and the same native detail/reader flow; third-party web pages are not embedded.
 - On-device favourites and reading history using SharedPreferences.
 - Native MangaDex chapter list and image reader for safe-rated supported titles.
 - HTTPS publisher links from MangaBaka metadata when explicitly tagged as publisher.
 - Modular source adapters, request deduplication, memory/disk cache and bounded retry for transient API errors.
 
 ## Catalogue and reading
-Catalogue data is fetched online from the public MangaBaka API. The client requests the safe content rating and exposes additional result pages with the API's documented 25-item page limit. The client does not apply the English-only licensed-series filter, because MangaBaka documents that its licence flag currently tracks English editions only. The API is a metadata catalogue, not a chapter file host; coverage is not exhaustive and changes as providers update their data.
+Catalogue metadata is fetched from the public MangaBaka v2 and MangaDex APIs. The client requests explicit `safe` ratings and applies additional restricted-tag checks; unknown or restricted ratings are excluded. MangaBaka is a metadata catalogue, not a chapter host. Supported chapter lists and pages are fetched from MangaDex's documented API and shown in ManhwaKu's native reader. Coverage depends on each provider and available translations.
 
-ManhwaKu does not download, scrape, bundle, or redistribute third-party chapters. Reading links, regional availability, login requirements and paid/free access remain controlled by each publisher or platform. WEBTOON titles open through their official WEBTOON pages.
+ManhwaKu does not scrape third-party websites, embed external reader pages, or redistribute chapter files. Publisher links are opened externally only when the metadata marks them active and trusted/official over HTTPS. MangaDex-powered chapter reading displays provider and scanlation-group attribution and must continue to follow MangaDex removal requests and no-ads/no-paid-services requirements.
 
 MangaBaka data is subject to CC BY-NC-SA 4.0 and attribution requirements; third-party fields have separate, more restrictive terms. See https://mangabaka.org/about/data-license.
 
 ## Build
-GitHub Actions runs Flutter analysis and widget tests, builds a release APK, and uploads the ManhwaKu-online-reader-release artifact.
+GitHub Actions runs Flutter analysis and widget tests, builds split ARMv7 and ARM64 release APKs, and uploads them as `ManhwaKu-v2.9.1-android-arm-apks`. Android 10+ is enforced with `minSdk 29`.
 
 
 ## Catalog sources (v2.4)
@@ -83,3 +83,12 @@ Provider limits and licenses remain in force. MangaBaka data is personal/non-com
 - Publisher and reading-platform links use the documented `links_v2` schema and are exposed only when marked active, trusted/official, and HTTPS.
 - Unofficial mirrors, unverified private APIs, and third-party HTML scraping are not integrated. MangaDex remains the connected chapter feed; MangaBaka is used for metadata only.
 
+
+
+## v2.9.1 reliability patch
+
+- Fix the public default MangaDex chapter language constant so the Flutter analyzer and the regression test agree.
+- Apply the shared bounded retry policy to MangaDex chapter-page metadata requests and validate the returned HTTPS image host.
+- Respect MangaBaka's documented `Retry-After` guidance for a single bounded retry instead of retrying too early on a 429 response.
+- Keep the app Android 10+ at build time and separate the legacy TeinManga native debug workflow from ManhwaKu Flutter release builds.
+- Keep MangaBaka and MangaDex as the connected metadata/chapter providers; unverified scraping packs and unofficial private endpoints are not added.
