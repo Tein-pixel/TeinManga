@@ -253,11 +253,11 @@ class ManhwaRepository {
         mangaId: String,
         language: String = "id",
         offset: Int = 0
-    ): Pair<List<Chapter>, Boolean> = withContext(Dispatchers.IO) {
+    ): ChapterPage = withContext(Dispatchers.IO) {
         require(UUID_PATTERN.matches(mangaId)) { "ID seri MangaDex tidak valid." }
         require(offset >= 0) { "Offset chapter tidak valid." }
 
-        fun fetchFeed(languageCode: String): List<Chapter> {
+        fun fetchFeed(languageCode: String): ChapterPage {
             val params = mutableListOf(
                 "limit=100",
                 "offset=$offset",
@@ -273,41 +273,17 @@ class ManhwaRepository {
                 "https://api.mangadex.org/manga/$mangaId/feed?${params.joinToString("&")}",
                 mangaDex = true
             )
-            val data = json.optJSONArray("data") ?: return emptyList()
-            return (0 until data.length()).mapNotNull { index ->
-                val row = data.optJSONObject(index) ?: return@mapNotNull null
-                val attrs = row.optJSONObject("attributes") ?: return@mapNotNull null
-                if (attrs.optInt("pages") <= 0 || attrs.optString("contentRating", "safe") != "safe") {
-                    return@mapNotNull null
-                }
-                var group = ""
-                val relationships = row.optJSONArray("relationships")
-                if (relationships != null) {
-                    for (j in 0 until relationships.length()) {
-                        val rel = relationships.optJSONObject(j) ?: continue
-                        if (rel.optString("type") == "scanlation_group") {
-                            group = rel.optJSONObject("attributes")?.optString("name").orEmpty()
-                        }
-                    }
-                }
-                Chapter(
-                    id = row.optString("id"),
-                    number = attrs.optString("chapter", "Oneshot"),
-                    title = attrs.optString("title"),
-                    language = attrs.optString("translatedLanguage", "unknown"),
-                    pageCount = attrs.optInt("pages"),
-                    group = group
-                ).takeIf { UUID_PATTERN.matches(it.id) && it.pageCount > 0 }
-            }
+            return parseChapterFeedResponse(json, offset)
         }
 
-        var chapters = fetchFeed(language)
+        var page = fetchFeed(language)
         var usedFallback = false
-        if (offset == 0 && language == "id" && chapters.isEmpty()) {
-            chapters = fetchFeed("all")
-            usedFallback = chapters.isNotEmpty()
+        if (offset == 0 && language == "id" && page.chapters.isEmpty()) {
+            val fallback = fetchFeed("all")
+            page = fallback
+            usedFallback = fallback.chapters.isNotEmpty()
         }
-        chapters to usedFallback
+        page.copy(usedFallback = usedFallback)
     }
 
     suspend fun chapterPages(chapterId: String, dataSaver: Boolean = true): List<String> =
@@ -342,4 +318,53 @@ class ManhwaRepository {
     companion object {
         private val UUID_PATTERN = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
     }
+
+/**
+ * Converts one MangaDex ChapterList response while preserving API pagination
+ * metadata. The offset advances by raw response rows even when a row is
+ * discarded because it has no readable pages or fails validation.
+ */
+internal fun parseChapterFeedResponse(json: JSONObject, offset: Int): ChapterPage {
+    require(offset >= 0) { "Offset chapter tidak valid." }
+    val data = json.optJSONArray("data") ?: JSONArray()
+    val uuidPattern = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+    val chapters = (0 until data.length()).mapNotNull { index ->
+        val row = data.optJSONObject(index) ?: return@mapNotNull null
+        val attrs = row.optJSONObject("attributes") ?: return@mapNotNull null
+        val pages = attrs.optInt("pages")
+        if (pages <= 0 || attrs.optString("contentRating", "safe") != "safe") {
+            return@mapNotNull null
+        }
+        val id = row.optString("id")
+        if (!uuidPattern.matches(id)) return@mapNotNull null
+
+        var group = ""
+        val relationships = row.optJSONArray("relationships")
+        if (relationships != null) {
+            for (j in 0 until relationships.length()) {
+                val rel = relationships.optJSONObject(j) ?: continue
+                if (rel.optString("type") == "scanlation_group") {
+                    group = rel.optJSONObject("attributes")?.optString("name").orEmpty()
+                    break
+                }
+            }
+        }
+        Chapter(
+            id = id,
+            number = attrs.optString("chapter", "Oneshot"),
+            title = attrs.optString("title"),
+            language = attrs.optString("translatedLanguage", "unknown"),
+            pageCount = pages,
+            group = group
+        )
+    }
+    val nextOffset = offset + data.length()
+    val total = json.optInt("total", nextOffset).coerceAtLeast(nextOffset)
+    return ChapterPage(
+        chapters = chapters,
+        nextOffset = nextOffset,
+        hasMore = data.length() > 0 && nextOffset < total
+    )
+}
+
 }
