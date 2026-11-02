@@ -493,8 +493,8 @@ String _extractPublisherUrl(dynamic rawLinks, {dynamic legacyLinks}) {
     for (final raw in rawLinks) {
       if (raw is! Map) continue;
       final type = raw['type']?.toString().toLowerCase();
-      final trust = raw['trust_level']?.toString().toLowerCase();
-      final status = raw['status']?.toString().toLowerCase();
+      final trust = raw['trust_level']?.toString().toLowerCase() ?? '';
+      final status = raw['status']?.toString().toLowerCase() ?? '';
       final explicitlyTrustedPlatform = type == 'webplatform' &&
           (trust == 'official' || trust == 'trusted') && status == 'active';
       if (type != 'publisher' && !explicitlyTrustedPlatform) continue;
