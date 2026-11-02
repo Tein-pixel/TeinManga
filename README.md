@@ -92,3 +92,12 @@ Provider limits and licenses remain in force. MangaBaka data is personal/non-com
 - Respect MangaBaka's documented `Retry-After` guidance for a single bounded retry instead of retrying too early on a 429 response.
 - Keep the app Android 10+ at build time and separate the legacy TeinManga native debug workflow from ManhwaKu Flutter release builds.
 - Keep MangaBaka and MangaDex as the connected metadata/chapter providers; unverified scraping packs and unofficial private endpoints are not added.
+
+
+## v2.9.2 reader and metadata reliability
+
+- If an Indonesian MangaDex chapter feed is empty, the reader checks the unfiltered feed once and shows other available languages with language labels instead of an empty list.
+- MangaBaka publisher discovery reads the documented `links` field as well as explicitly trusted `links_v2` records, and follows merged series IDs when resolving full metadata.
+- Series artwork cache keys are revisioned so updated cover files are fetched again; full MangaBaka metadata is preferred when it supplies a larger refreshed cover.
+- Lookism and Solo Leveling expose their known official publisher pages when no supported MangaDex chapter feed is available. Publisher pages open externally and remain subject to each publisher's region, account, and age rules.
+- MangaBaka remains a metadata source. Official sites are not scraped and their chapter image files are not copied into ManhwaKu.
