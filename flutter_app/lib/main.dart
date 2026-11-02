@@ -78,6 +78,7 @@ class SeriesItem {
     required this.language,
     required this.contentRating,
     this.source = 'MangaBaka',
+    this.availableTranslatedLanguages = const <String>[],
   });
 
   final int id;
@@ -92,6 +93,7 @@ class SeriesItem {
   final String language;
   final String contentRating;
   final String source;
+  final List<String> availableTranslatedLanguages;
 
   factory SeriesItem.fromJson(Map<String, dynamic> json) {
     final coverData = json['cover'] is Map
@@ -137,6 +139,68 @@ class SeriesItem {
   }
 
 
+
+  factory SeriesItem.fromMangaBakaV2(Map<String, dynamic> json) {
+    final language = _firstText([json['original_language'], 'unknown']);
+    final rows = (json['titles'] is List ? json['titles'] as List : const [])
+        .whereType<Map>()
+        .toList();
+
+    String titleFor(String code, {bool primaryOnly = false}) {
+      for (final row in rows) {
+        if (row['language']?.toString().toLowerCase() != code.toLowerCase()) continue;
+        if (primaryOnly && row['is_primary'] != true) continue;
+        final value = _firstText([row['title']]);
+        if (value.isNotEmpty) return value;
+      }
+      return '';
+    }
+
+    final coverData = json['cover'] is Map
+        ? Map<String, dynamic>.from(json['cover'] as Map)
+        : <String, dynamic>{};
+    String coverValue(String key) {
+      final value = coverData[key];
+      if (value is String) return value;
+      if (value is Map) return _firstText([value['x2'], value['x1'], value['url']]);
+      return '';
+    }
+
+    final authors = json['authors'] is List ? json['authors'] as List : const [];
+    final authorNames = authors.map((entry) => entry is Map
+        ? _firstText([entry['name'], entry['title']])
+        : entry.toString()).where((name) => name.trim().isNotEmpty).take(2).join(', ');
+    final ratingValue = json['rating'];
+
+    return SeriesItem(
+      id: _toInt(json['id']),
+      title: _firstText([
+        titleFor('en', primaryOnly: true),
+        titleFor('en'),
+        titleFor(language, primaryOnly: true),
+        titleFor(language),
+        ...rows.where((row) => row['is_primary'] == true).map((row) => row['title']),
+        json['title'],
+        'Tanpa judul',
+      ]),
+      type: _firstText([json['type'], 'other']).toLowerCase(),
+      url: _firstText([json['canonical_url'], 'https://mangabaka.org/']),
+      cover: _firstText([
+        coverValue('x350'),
+        coverValue('x250'),
+        coverValue('x150'),
+        coverValue('raw'),
+      ]),
+      description: _firstText([json['description'], 'Deskripsi belum tersedia.']),
+      status: _firstText([json['status'], json['state'], 'unknown']),
+      rating: ratingValue is num ? ratingValue.toDouble() : null,
+      author: authorNames,
+      language: language,
+      contentRating: _firstText([json['content_rating'], 'safe']),
+      source: 'MangaBaka',
+    );
+  }
+
   factory SeriesItem.fromJikan(Map<String, dynamic> json) {
     final authors = json['authors'] is List ? json['authors'] as List : const [];
     final images = json['images'] is Map
@@ -180,12 +244,13 @@ class SeriesItem {
     final attributes = json['attributes'] is Map
         ? Map<String, dynamic>.from(json['attributes'] as Map)
         : <String, dynamic>{};
-    final relationships =
-        json['relationships'] is List ? json['relationships'] as List : const [];
+    final relationships = json['relationships'] is List
+        ? json['relationships'] as List
+        : const [];
     final titles = attributes['title'] is Map
         ? Map<String, dynamic>.from(attributes['title'] as Map)
         : <String, dynamic>{};
-    final description = attributes['description'] is Map
+    final descriptions = attributes['description'] is Map
         ? Map<String, dynamic>.from(attributes['description'] as Map)
         : <String, dynamic>{};
     final language = _firstText([attributes['originalLanguage'], 'unknown']);
@@ -196,6 +261,7 @@ class SeriesItem {
             : language == 'ja'
                 ? 'manga'
                 : 'other';
+
     String coverFile = '';
     final authors = <String>[];
     for (final relation in relationships.whereType<Map>()) {
@@ -210,34 +276,47 @@ class SeriesItem {
         if (name.isNotEmpty) authors.add(name);
       }
     }
+
     final id = _firstText([json['id']]);
-    final cover = coverFile.isEmpty
-        ? ''
-        : 'https://uploads.mangadex.org/covers/$id/$coverFile.256.jpg';
-    final rating = attributes['contentRating']?.toString() ?? 'safe';
+    final cover = coverFile.isEmpty ? '' :
+        'https://uploads.mangadex.org/covers/$id/$coverFile.256.jpg';
+    final availableLanguages = attributes['availableTranslatedLanguages'] is List
+        ? (attributes['availableTranslatedLanguages'] as List)
+            .whereType<String>()
+            .map((value) => value.toLowerCase())
+            .where((value) => RegExp(r'^[a-z]{2}(?:-[a-z]{2})?$').hasMatch(value))
+            .toSet()
+            .toList()
+        : <String>[];
+
     return SeriesItem(
       id: _stableId('mangadex:$id'),
       title: _firstText([
         titles['en'],
+        titles[language],
         titles['ja-ro'],
-        titles['ja'],
-        titles.values.isEmpty ? '' : titles.values.first,
+        titles['ko-ro'],
+        titles['zh-ro'],
+        ...titles.values,
         'Tanpa judul',
       ]),
       type: type,
       url: id.isEmpty ? 'https://mangadex.org/' : 'https://mangadex.org/title/$id',
       cover: cover,
       description: _firstText([
-        description['en'],
-        description['id'],
+        descriptions['en'],
+        descriptions['id'],
+        descriptions[language],
+        ...descriptions.values,
         'Deskripsi belum tersedia.',
       ]),
       status: _firstText([attributes['status'], 'unknown']),
       rating: null,
       author: authors.take(2).join(', '),
       language: language,
-      contentRating: rating,
+      contentRating: attributes['contentRating']?.toString() ?? 'safe',
       source: 'MangaDex',
+      availableTranslatedLanguages: availableLanguages,
     );
   }
 
@@ -254,6 +333,8 @@ class SeriesItem {
         language: _firstText([json['language']]),
         contentRating: _firstText([json['contentRating'], 'safe']),
         source: _firstText([json['source'], 'MangaBaka']),
+        availableTranslatedLanguages: (json['availableTranslatedLanguages'] as List?)
+            ?.whereType<String>().toList() ?? const <String>[],
       );
 
   Map<String, dynamic> toMap() => {
@@ -269,6 +350,7 @@ class SeriesItem {
         'language': language,
         'contentRating': contentRating,
         'source': source,
+        'availableTranslatedLanguages': availableTranslatedLanguages,
       };
 }
 
