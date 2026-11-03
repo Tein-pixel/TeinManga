@@ -1,5 +1,6 @@
 package com.manhwaku.reader.data
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -76,13 +77,33 @@ class ManhwaRepository {
         page: Int = 1,
         type: String = "all",
         latest: Boolean = false
-    ): List<Series> = withContext(Dispatchers.IO) {
+    ): CatalogSearchResult = withContext(Dispatchers.IO) {
         val cleanQuery = canonicalTitle(query).trim()
-        val mangaBaka = runCatching { searchMangaBaka(cleanQuery, page, type, latest) }.getOrDefault(emptyList())
-        val mangaDex = runCatching { searchMangaDex(cleanQuery, page, type, latest) }.getOrDefault(emptyList())
+        var mangaBakaFailure: Exception? = null
+        val mangaBakaResult = try {
+            searchMangaBaka(cleanQuery, page, type, latest)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            mangaBakaFailure = error
+            CatalogSearchResult(emptyList())
+        }
+
+        val mangaDexRequested = type in setOf("all", "manga", "manhwa", "manhua", "webtoon")
+        var mangaDexFailure: Exception? = null
+        val mangaDex = if (mangaDexRequested) {
+            try {
+                searchMangaDex(cleanQuery, page, type, latest)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                mangaDexFailure = error
+                emptyList()
+            }
+        } else emptyList()
 
         val merged = LinkedHashMap<String, Series>()
-        mangaBaka.forEach { item ->
+        mangaBakaResult.series.forEach { item ->
             if (item.contentRating == "safe" && !isPreSerialization(item.title)) {
                 merged[normalizeTitle(item.title)] = item
             }
@@ -102,7 +123,16 @@ class ManhwaRepository {
                 )
             } else item
         }
-        merged.values.toList()
+        if (merged.isEmpty() && (mangaBakaFailure != null || (mangaDexRequested && mangaDexFailure != null))) {
+            throw IllegalStateException(
+                "Katalog sedang tidak merespons. Periksa koneksi lalu coba lagi.",
+                mangaBakaFailure ?: mangaDexFailure
+            )
+        }
+        CatalogSearchResult(
+            series = merged.values.toList(),
+            excludedByContentRating = mangaBakaResult.excludedByContentRating
+        )
     }
 
     private fun searchMangaBaka(
@@ -110,7 +140,8 @@ class ManhwaRepository {
         page: Int,
         type: String,
         latest: Boolean
-    ): List<Series> {
+    ): CatalogSearchResult {
+        if (type == "webtoon") return CatalogSearchResult(emptyList())
         val params = mutableListOf(
             "limit=24",
             "page=${page.coerceAtLeast(1)}",
@@ -124,10 +155,7 @@ class ManhwaRepository {
             params += "type=${encode(apiType)}"
         }
         val json = requestJson("https://api.mangabaka.org/v2/series/search?${params.joinToString("&")}")
-        val data = json.optJSONArray("data") ?: return emptyList()
-        return (0 until data.length()).mapNotNull { index ->
-            data.optJSONObject(index)?.let(Series::fromMangaBaka)
-        }
+        return parseMangaBakaSearchResponse(json)
     }
 
     private fun searchMangaDex(
@@ -155,11 +183,15 @@ class ManhwaRepository {
             "manga" -> params += "originalLanguage%5B%5D=ja"
             "manhwa" -> params += "originalLanguage%5B%5D=ko"
             "manhua" -> params += "originalLanguage%5B%5D=zh"
-            "all" -> {
+            "all", "webtoon" -> {
                 params += "originalLanguage%5B%5D=ja"
                 params += "originalLanguage%5B%5D=ko"
                 params += "originalLanguage%5B%5D=zh"
             }
+            else -> return emptyList()
+        }
+        if (type == "webtoon") {
+            params += "includedTags%5B%5D=e197df38-d0e7-43b5-9b09-2842d0c326dd"
         }
         val json = requestJson("https://api.mangadex.org/manga?${params.joinToString("&")}", mangaDex = true)
         val data = json.optJSONArray("data") ?: return emptyList()
@@ -179,10 +211,10 @@ class ManhwaRepository {
             "includes%5B%5D=author",
             "order%5Brelevance%5D=desc"
         )
-        val data = runCatching {
-            requestJson("https://api.mangadex.org/manga?${params.joinToString("&")}", mangaDex = true)
-                .optJSONArray("data") ?: JSONArray()
-        }.getOrElse { return@withContext null }
+        val data = requestJson(
+            "https://api.mangadex.org/manga?${params.joinToString("&")}",
+            mangaDex = true
+        ).optJSONArray("data") ?: JSONArray()
 
         val target = normalizeTitle(query)
         val matches = mutableListOf<Series>()
@@ -220,7 +252,7 @@ class ManhwaRepository {
         val canonical = canonicalTitle(item.title)
         val id = item.mangaBakaId ?: runCatching {
             searchMangaBaka(canonical, 1, "all", latest = false)
-                .firstOrNull { normalizeTitle(it.title) == normalizeTitle(canonical) }
+                .series.firstOrNull { normalizeTitle(it.title) == normalizeTitle(canonical) }
                 ?.mangaBakaId
         }.getOrNull() ?: return@withContext null
         var currentId = id
@@ -243,14 +275,18 @@ class ManhwaRepository {
     }
 
     suspend fun chapters(
-        mangaId: String,
+        manga: Series,
         language: String = "id",
         offset: Int = 0
-    ): Pair<List<Chapter>, Boolean> = withContext(Dispatchers.IO) {
+    ): ChapterPage = withContext(Dispatchers.IO) {
+        require(manga.contentRating == "safe") {
+            "Chapter hanya dapat dimuat untuk seri dengan rating aman yang sudah diverifikasi."
+        }
+        val mangaId = manga.mangaDexId.orEmpty()
         require(UUID_PATTERN.matches(mangaId)) { "ID seri MangaDex tidak valid." }
         require(offset >= 0) { "Offset chapter tidak valid." }
 
-        fun fetchFeed(languageCode: String): List<Chapter> {
+        fun fetchFeed(languageCode: String): ChapterPage {
             val params = mutableListOf(
                 "limit=100",
                 "offset=$offset",
@@ -266,41 +302,17 @@ class ManhwaRepository {
                 "https://api.mangadex.org/manga/$mangaId/feed?${params.joinToString("&")}",
                 mangaDex = true
             )
-            val data = json.optJSONArray("data") ?: return emptyList()
-            return (0 until data.length()).mapNotNull { index ->
-                val row = data.optJSONObject(index) ?: return@mapNotNull null
-                val attrs = row.optJSONObject("attributes") ?: return@mapNotNull null
-                if (attrs.optInt("pages") <= 0 || attrs.optString("contentRating", "safe") != "safe") {
-                    return@mapNotNull null
-                }
-                var group = ""
-                val relationships = row.optJSONArray("relationships")
-                if (relationships != null) {
-                    for (j in 0 until relationships.length()) {
-                        val rel = relationships.optJSONObject(j) ?: continue
-                        if (rel.optString("type") == "scanlation_group") {
-                            group = rel.optJSONObject("attributes")?.optString("name").orEmpty()
-                        }
-                    }
-                }
-                Chapter(
-                    id = row.optString("id"),
-                    number = attrs.optString("chapter", "Oneshot"),
-                    title = attrs.optString("title"),
-                    language = attrs.optString("translatedLanguage", "unknown"),
-                    pageCount = attrs.optInt("pages"),
-                    group = group
-                ).takeIf { UUID_PATTERN.matches(it.id) && it.pageCount > 0 }
-            }
+            return parseChapterFeedResponse(json, offset)
         }
 
-        var chapters = fetchFeed(language)
+        var page = fetchFeed(language)
         var usedFallback = false
-        if (offset == 0 && language == "id" && chapters.isEmpty()) {
-            chapters = fetchFeed("all")
-            usedFallback = chapters.isNotEmpty()
+        if (offset == 0 && language == "id" && page.chapters.isEmpty()) {
+            val fallback = fetchFeed("all")
+            page = fallback
+            usedFallback = fallback.chapters.isNotEmpty()
         }
-        chapters to usedFallback
+        page.copy(usedFallback = usedFallback)
     }
 
     suspend fun chapterPages(chapterId: String, dataSaver: Boolean = true): List<String> =
@@ -335,4 +347,64 @@ class ManhwaRepository {
     companion object {
         private val UUID_PATTERN = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
     }
+
+/**
+ * Converts one MangaDex ChapterList response while preserving API pagination
+ * metadata. The offset advances by raw response rows even when a row is
+ * discarded because it has no readable pages or fails validation.
+ */
+internal fun parseChapterFeedResponse(json: JSONObject, offset: Int): ChapterPage {
+    require(offset >= 0) { "Offset chapter tidak valid." }
+    val data = json.optJSONArray("data") ?: JSONArray()
+    val uuidPattern = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+    // MangaDex contentRating belongs to the parent manga, not ChapterAttributes.
+    // The repository verifies that parent Series is explicitly safe before requesting this feed.
+    val chapters = (0 until data.length()).mapNotNull { index ->
+        val row = data.optJSONObject(index) ?: return@mapNotNull null
+        val attrs = row.optJSONObject("attributes") ?: return@mapNotNull null
+        val pages = attrs.optInt("pages")
+        if (pages <= 0) return@mapNotNull null
+        val id = row.optString("id")
+        if (!uuidPattern.matches(id)) return@mapNotNull null
+
+        var group = ""
+        val relationships = row.optJSONArray("relationships")
+        if (relationships != null) {
+            for (j in 0 until relationships.length()) {
+                val rel = relationships.optJSONObject(j) ?: continue
+                if (rel.optString("type") == "scanlation_group") {
+                    group = rel.optJSONObject("attributes")?.optString("name").orEmpty()
+                    break
+                }
+            }
+        }
+        Chapter(
+            id = id,
+            number = attrs.optString("chapter", "Oneshot"),
+            title = attrs.optString("title"),
+            language = attrs.optString("translatedLanguage", "unknown"),
+            pageCount = pages,
+            group = group
+        )
+    }
+    val nextOffset = offset + data.length()
+    val total = json.optInt("total", nextOffset).coerceAtLeast(nextOffset)
+    return ChapterPage(
+        chapters = chapters,
+        nextOffset = nextOffset,
+        hasMore = data.length() > 0 && nextOffset < total
+    )
+}
+
+}
+
+internal fun parseMangaBakaSearchResponse(json: JSONObject): CatalogSearchResult {
+    val rows = json.optJSONArray("data") ?: JSONArray()
+    val series = (0 until rows.length()).mapNotNull { index ->
+        rows.optJSONObject(index)?.let(Series::fromMangaBaka)
+    }
+    return CatalogSearchResult(
+        series = series,
+        excludedByContentRating = json.optInt("excluded_count").coerceAtLeast(0)
+    )
 }

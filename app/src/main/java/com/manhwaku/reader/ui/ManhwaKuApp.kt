@@ -2,7 +2,11 @@ package com.manhwaku.reader.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -41,35 +45,42 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import com.manhwaku.reader.data.Chapter
 import com.manhwaku.reader.data.LibraryStore
 import com.manhwaku.reader.data.ManhwaRepository
 import com.manhwaku.reader.data.Series
 import com.manhwaku.reader.data.canonicalTitle
+import com.manhwaku.reader.data.cleanSynopsis
 import com.manhwaku.reader.data.normalizeTitle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private val Bg = Color(0xFF080D16)
-private val Panel = Color(0xFF111A29)
-private val Panel2 = Color(0xFF19263A)
-private val Accent = Color(0xFF36C5F0)
-private val AccentAlt = Color(0xFF9B8CFF)
-private val Ink = Color(0xFFF4F7FC)
-private val Muted = Color(0xFF8F9BAD)
-private val Stroke = Color(0xFF26364B)
+private val Bg = Color(0xFF080B13)
+private val Panel = Color(0xFF111827)
+private val Panel2 = Color(0xFF1A2740)
+private val Accent = Color(0xFF78A6FF)
+private val AccentAlt = Color(0xFFAB91FF)
+private val Ink = Color(0xFFF7F8FC)
+private val Muted = Color(0xFF97A4B8)
+private val Stroke = Color(0xFF2A3952)
 
 @Composable
 fun ManhwaKuApp() {
@@ -175,25 +186,49 @@ private fun HomeScreen(
     var latest by remember { mutableStateOf<List<Series>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf("") }
+    var emptyCatalogue by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    var showAbout by remember { mutableStateOf(false) }
 
     suspend fun load() {
         loading = true
         error = ""
+        emptyCatalogue = false
         try {
             val trendingResult = repository.search(page = 1, latest = false)
             val latestResult = repository.search(page = 1, latest = true)
-            trending = trendingResult
-            latest = latestResult
-            if (trending.isEmpty() && latest.isEmpty()) error = "Katalog belum mengembalikan judul yang cocok."
-        } catch (_: Exception) {
-            error = "Katalog gagal dimuat. Periksa koneksi dan coba lagi."
+            trending = trendingResult.series
+            latest = latestResult.series
+            emptyCatalogue = trending.isEmpty() && latest.isEmpty()
+        } catch (failure: Exception) {
+            if (failure is kotlinx.coroutines.CancellationException) throw failure
+            error = failure.message ?: "Katalog gagal dimuat. Periksa koneksi lalu coba lagi."
         } finally {
             loading = false
         }
     }
 
     LaunchedEffect(Unit) { load() }
+
+    if (showAbout) {
+        AlertDialog(
+            onDismissRequest = { showAbout = false },
+            containerColor = Panel,
+            title = { Text("ManhwaKu", color = Ink, fontWeight = FontWeight.Black) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Versi 3.0.3 · Kotlin + Jetpack Compose", color = Ink, fontSize = 12.sp)
+                    Text("Metadata katalog: MangaBaka. Daftar chapter dan reader: MangaDex.", color = Muted, fontSize = 11.sp)
+                    Text("Hanya judul dengan rating aman yang ditampilkan. Ketersediaan chapter bergantung pada bahasa dan sumber.", color = Muted, fontSize = 11.sp)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showAbout = false }) {
+                    Text("Tutup", color = Accent, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -204,18 +239,13 @@ private fun HomeScreen(
                 modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 12.dp, top = 16.dp, bottom = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(
-                    Modifier.size(42.dp).clip(RoundedCornerShape(13.dp))
-                        .background(Brush.linearGradient(listOf(Accent, Color(0xFF6488FF)))),
-                    contentAlignment = Alignment.Center
-                ) { Icon(Icons.Default.MenuBook, null, tint = Bg, modifier = Modifier.size(25.dp)) }
-                Spacer(Modifier.width(11.dp))
+                BrandMark(44)
+                Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("ManhwaKu", color = Ink, fontSize = 21.sp, fontWeight = FontWeight.Black)
-                    Text("Temukan bacaan berikutnya", color = Muted, fontSize = 10.sp)
+                    Text("ManhwaKu", color = Ink, fontSize = 22.sp, fontWeight = FontWeight.Black)
                 }
                 IconButton(onClick = onSearch) { Icon(Icons.Default.Search, "Cari", tint = Ink) }
-                IconButton(onClick = { }) { Icon(Icons.Default.Info, "Tentang", tint = Muted) }
+                IconButton(onClick = { showAbout = true }) { Icon(Icons.Default.Info, "Tentang", tint = Muted) }
             }
         }
         item {
@@ -244,6 +274,12 @@ private fun HomeScreen(
             item { LoadingState("Memuat katalog…") }
         } else if (error.isNotBlank() && trending.isEmpty() && latest.isEmpty()) {
             item { ErrorState(error, "Coba lagi") { scope.launch { load() } } }
+        } else if (emptyCatalogue) {
+            item {
+                EmptyState("Katalog belum tersedia", "Coba muat ulang beberapa saat lagi.", "Muat ulang") {
+                    scope.launch { load() }
+                }
+            }
         } else {
             if (trending.isNotEmpty()) {
                 item { SectionTitle("Sedang populer", "Jelajahi", onExplore) }
@@ -255,19 +291,65 @@ private fun HomeScreen(
             }
             if (trending.isNotEmpty()) {
                 item { SectionTitle("Pilihan lainnya", "Jelajahi", onExplore) }
-                item { HorizontalShelf(trending.drop(5).take(12), onOpen) }
+                item { HorizontalShelf(trending.drop(8).take(12), onOpen) }
             }
             if (error.isNotBlank()) {
                 item { Text(error, color = Muted, fontSize = 11.sp, modifier = Modifier.padding(18.dp)) }
             }
         }
-        item {
-            Text(
-                "Metadata: MangaBaka · Chapter: MangaDex · Konten dengan rating aman saja",
-                color = Muted,
-                fontSize = 9.sp,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 20.dp)
-            )
+    }
+}
+
+@Composable
+private fun BrandMark(size: Int) {
+    val shape = RoundedCornerShape((size * 0.30f).dp)
+    Box(
+        Modifier.shadow((size * 0.20f).dp, shape)
+            .size(size.dp)
+            .clip(shape)
+            .background(
+                Brush.linearGradient(
+                    listOf(Color(0xFF65DFF2), Color(0xFF658CFF), Color(0xFFAC7CF1))
+                )
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            Modifier.fillMaxSize(0.86f)
+                .clip(RoundedCornerShape((size * 0.25f).dp))
+                .background(Color.White.copy(alpha = 0.13f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Canvas(Modifier.fillMaxSize(0.68f)) {
+                val w = this.size.width
+                val h = this.size.height
+                val ink = Color(0xFF091626)
+                val detail = Color(0xFF2E638B)
+                val pageLeft = Path().apply {
+                    moveTo(w * 0.48f, h * 0.25f)
+                    cubicTo(w * 0.34f, h * 0.17f, w * 0.16f, h * 0.18f, w * 0.10f, h * 0.29f)
+                    lineTo(w * 0.10f, h * 0.73f)
+                    cubicTo(w * 0.10f, h * 0.79f, w * 0.16f, h * 0.82f, w * 0.23f, h * 0.78f)
+                    cubicTo(w * 0.33f, h * 0.73f, w * 0.42f, h * 0.76f, w * 0.48f, h * 0.84f)
+                    close()
+                }
+                val pageRight = Path().apply {
+                    moveTo(w * 0.52f, h * 0.25f)
+                    cubicTo(w * 0.66f, h * 0.17f, w * 0.84f, h * 0.18f, w * 0.90f, h * 0.29f)
+                    lineTo(w * 0.90f, h * 0.73f)
+                    cubicTo(w * 0.90f, h * 0.79f, w * 0.84f, h * 0.82f, w * 0.77f, h * 0.78f)
+                    cubicTo(w * 0.67f, h * 0.73f, w * 0.58f, h * 0.76f, w * 0.52f, h * 0.84f)
+                    close()
+                }
+                drawPath(pageLeft, ink)
+                drawPath(pageRight, ink)
+                val lineWidth = w * 0.035f
+                drawLine(detail, Offset(w * 0.20f, h * 0.40f), Offset(w * 0.40f, h * 0.37f), lineWidth, cap = StrokeCap.Round)
+                drawLine(detail, Offset(w * 0.20f, h * 0.51f), Offset(w * 0.40f, h * 0.48f), lineWidth, cap = StrokeCap.Round)
+                drawLine(detail, Offset(w * 0.60f, h * 0.37f), Offset(w * 0.80f, h * 0.40f), lineWidth, cap = StrokeCap.Round)
+                drawLine(detail, Offset(w * 0.60f, h * 0.48f), Offset(w * 0.80f, h * 0.51f), lineWidth, cap = StrokeCap.Round)
+                drawLine(ink, Offset(w * 0.50f, h * 0.25f), Offset(w * 0.50f, h * 0.83f), w * 0.045f, cap = StrokeCap.Round)
+            }
         }
     }
 }
@@ -279,9 +361,12 @@ private fun RowScope.QuickAction(label: String, icon: androidx.compose.ui.graphi
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
-            Modifier.size(48.dp).clip(RoundedCornerShape(16.dp)).background(Panel),
+            Modifier.size(52.dp)
+                .clip(RoundedCornerShape(19.dp))
+                .background(Brush.linearGradient(listOf(Panel2, Panel)))
+                .border(1.dp, Stroke.copy(alpha = 0.75f), RoundedCornerShape(19.dp)),
             contentAlignment = Alignment.Center
-        ) { Icon(icon, null, tint = Accent, modifier = Modifier.size(21.dp)) }
+        ) { Icon(icon, null, tint = Accent, modifier = Modifier.size(23.dp)) }
         Spacer(Modifier.height(6.dp))
         Text(label, color = Muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
     }
@@ -308,20 +393,36 @@ private fun HeroShelf(items: List<Series>, onOpen: (Series) -> Unit) {
     ) {
         items(items, key = { it.id }) { item ->
             Row(
-                Modifier.width(300.dp).height(178.dp).clip(RoundedCornerShape(18.dp))
-                    .background(Brush.linearGradient(listOf(Color(0xFF18324A), Color(0xFF101725))))
-                    .clickable { onOpen(item) }.padding(14.dp),
+                Modifier.width(312.dp).height(184.dp)
+                    .clip(RoundedCornerShape(23.dp))
+                    .background(
+                        Brush.linearGradient(
+                            listOf(Color(0xFF203B5A), Color(0xFF17263F), Color(0xFF111827))
+                        )
+                    )
+                    .border(
+                        1.dp,
+                        Brush.linearGradient(listOf(Color(0xFF6FC7FF).copy(alpha = 0.55f), Stroke, Color(0xFF9F8BFF).copy(alpha = 0.25f))),
+                        RoundedCornerShape(23.dp)
+                    )
+                    .clickable { onOpen(item) }.padding(13.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                SeriesCover(item.cover, Modifier.width(104.dp).fillMaxHeight(), true)
+                SeriesCover(item.cover, Modifier.width(110.dp).fillMaxHeight(), true)
                 Spacer(Modifier.width(13.dp))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
-                    Text(typeLabel(item.type).uppercase(), color = Accent, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                    Text(typeLabel(item.type).uppercase(), color = Accent, fontSize = 9.sp, fontWeight = FontWeight.Black, letterSpacing = 1.1.sp)
                     Spacer(Modifier.height(7.dp))
-                    Text(item.title, color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Black, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    Text(item.title, color = Ink, fontSize = 17.sp, lineHeight = 21.sp, fontWeight = FontWeight.ExtraBold, maxLines = 3, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.height(7.dp))
-                    Text(item.description.ifBlank { "Buka untuk melihat detail dan chapter yang tersedia." },
-                        color = Muted, fontSize = 10.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        cleanSynopsis(item.description).ifBlank { typeLabel(item.type) },
+                        color = Muted,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
         }
@@ -340,12 +441,23 @@ private fun HorizontalShelf(items: List<Series>, onOpen: (Series) -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         items(items, key = { it.id }) { item ->
-            Column(Modifier.width(112.dp).clickable { onOpen(item) }) {
-                SeriesCover(item.cover, Modifier.fillMaxWidth().height(148.dp))
-                Spacer(Modifier.height(7.dp))
-                Text(item.title, color = Ink, fontSize = 11.sp, fontWeight = FontWeight.Bold,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(typeLabel(item.type), color = Muted, fontSize = 9.sp)
+            Column(Modifier.width(126.dp).clickable { onOpen(item) }) {
+                Box {
+                    SeriesCover(item.cover, Modifier.fillMaxWidth().aspectRatio(0.70f))
+                    Box(
+                        Modifier.align(Alignment.TopStart).padding(6.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xCC0B1423))
+                            .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 7.dp, vertical = 4.dp)
+                    ) {
+                        Text(typeLabel(item.type).uppercase(), color = Accent, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(item.title, color = Ink, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 15.sp)
+                Text(statusLabel(item.status), color = Muted, fontSize = 10.sp)
             }
         }
     }
@@ -366,11 +478,23 @@ private fun CatalogScreen(
     var loading by remember { mutableStateOf(false) }
     var loadingMore by remember { mutableStateOf(false) }
     var hasMore by remember { mutableStateOf(false) }
+    var hiddenByRating by remember { mutableIntStateOf(0) }
     var error by remember { mutableStateOf("") }
     var searched by remember { mutableStateOf(!isSearch) }
     val scope = rememberCoroutineScope()
+    val keyboardController = LocalSoftwareKeyboardController.current
 
-    val types = listOf("Semua" to "all", "Manhwa" to "manhwa", "Manga" to "manga", "Manhua" to "manhua")
+    val types = listOf(
+        "Semua" to "all",
+        "Manga" to "manga",
+        "Manhwa" to "manhwa",
+        "Manhua" to "manhua",
+        "Novel" to "novel",
+        "Light Novel" to "lightnovel",
+        "Webtoon" to "webtoon",
+        "OEL" to "oel",
+        "Lainnya" to "other"
+    )
 
     fun load(reset: Boolean, q: String = query, type: String = selectedType) {
         if (loading || loadingMore) return
@@ -379,18 +503,22 @@ private fun CatalogScreen(
             loading = true
             error = ""
             items = emptyList()
+            hiddenByRating = 0
             page = 1
             searched = true
         } else loadingMore = true
         scope.launch {
             try {
                 val found = repository.search(q, nextPage, type, latest = !isSearch && q.isBlank())
-                items = if (reset) found else (items + found).distinctBy { normalizeTitle(it.title) }
+                items = if (reset) found.series else (items + found.series).distinctBy { normalizeTitle(it.title) }
+                hiddenByRating = if (reset) found.excludedByContentRating
+                    else hiddenByRating + found.excludedByContentRating
                 page = nextPage
-                hasMore = found.size >= 24
-                if (found.isEmpty() && reset) error = "Tidak ada judul yang cocok dalam katalog aman."
-            } catch (_: Exception) {
-                error = "Pencarian gagal. Periksa koneksi lalu coba lagi."
+                hasMore = found.series.size >= 24
+                if (found.series.isEmpty() && reset) error = ""
+            } catch (failure: Exception) {
+                if (failure is kotlinx.coroutines.CancellationException) throw failure
+                error = failure.message ?: "Pencarian gagal. Periksa koneksi lalu coba lagi."
             } finally {
                 loading = false
                 loadingMore = false
@@ -422,16 +550,40 @@ private fun CatalogScreen(
                         focusedBorderColor = Accent, unfocusedBorderColor = Stroke,
                         focusedContainerColor = Panel, unfocusedContainerColor = Panel
                     ),
-                    shape = RoundedCornerShape(14.dp)
+                    shape = RoundedCornerShape(17.dp),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(
+                        onSearch = {
+                            keyboardController?.hide()
+                            load(true, query.trim())
+                        }
+                    )
                 )
                 Spacer(Modifier.width(7.dp))
                 Button(
                     onClick = { load(true, query.trim()) },
                     colors = ButtonDefaults.buttonColors(containerColor = Accent),
-                    shape = RoundedCornerShape(13.dp),
-                    contentPadding = PaddingValues(horizontal = 13.dp, vertical = 14.dp)
-                ) { Text("Cari", color = Bg, fontWeight = FontWeight.Black) }
+                    shape = RoundedCornerShape(16.dp),
+                    contentPadding = PaddingValues(horizontal = 15.dp, vertical = 15.dp)
+                ) {
+                    if (loading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(17.dp),
+                            color = Bg,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text("Cari", color = Bg, fontWeight = FontWeight.Black)
+                    }
+                }
             }
+        }
+        if (loading) {
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(2.dp),
+                color = Accent,
+                trackColor = Panel2
+            )
         }
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 10.dp),
@@ -462,16 +614,29 @@ private fun CatalogScreen(
             Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(if (items.isEmpty()) "Katalog" else "${items.size} judul",
+            Text(if (items.isEmpty()) "Hasil pencarian" else "${items.size} judul",
                 color = Muted, fontSize = 10.sp, modifier = Modifier.weight(1f))
             IconButton(onClick = { load(true) }) { Icon(Icons.Default.Refresh, "Muat ulang", tint = Muted) }
+        }
+        if (isSearch && hiddenByRating > 0) {
+            Text(
+                "$hiddenByRating judul disembunyikan oleh filter rating konten aman.",
+                color = Muted,
+                fontSize = 10.sp,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 4.dp)
+            )
         }
 
         when {
             !searched -> EmptyState("Temukan cerita", "Cari berdasarkan judul atau pilih jenis komik.", null) {}
             loading && items.isEmpty() -> LoadingState("Mencari judul…")
             error.isNotBlank() && items.isEmpty() -> ErrorState(error, "Coba lagi") { load(true) }
-            items.isEmpty() -> EmptyState("Belum ada hasil", error.ifBlank { "Coba kata kunci atau jenis yang berbeda." }, "Muat ulang") { load(true) }
+            items.isEmpty() && hiddenByRating > 0 -> EmptyState(
+                "Hasil dibatasi filter",
+                "$hiddenByRating judul tidak ditampilkan karena ratingnya di luar filter konten aman.",
+                "Cari judul lain"
+            ) { query = ""; load(true, "") }
+            items.isEmpty() -> EmptyState("Tidak ditemukan", "Coba judul atau kategori lain.", "Cari lagi") { load(true) }
             else -> {
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(3),
@@ -580,40 +745,55 @@ private fun HistoryScreen(library: LibraryStore, onOpen: (Series) -> Unit) {
 @Composable
 private fun SeriesCard(item: Series, onOpen: (Series) -> Unit) {
     Column(Modifier.fillMaxWidth().clickable { onOpen(item) }) {
-        Box(Modifier.fillMaxWidth().height(154.dp)) {
+        Box(Modifier.fillMaxWidth().aspectRatio(0.70f)) {
             SeriesCover(item.cover, Modifier.fillMaxSize())
             Box(
-                Modifier.align(Alignment.TopStart).padding(5.dp)
-                    .clip(RoundedCornerShape(5.dp)).background(Accent).padding(horizontal = 6.dp, vertical = 3.dp)
+                Modifier.align(Alignment.TopStart).padding(6.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xCC0B1423))
+                    .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 7.dp, vertical = 4.dp)
             ) {
-                Text(typeLabel(item.type).uppercase(), color = Bg, fontSize = 7.sp, fontWeight = FontWeight.Black)
+                Text(typeLabel(item.type).uppercase(), color = Accent, fontSize = 8.sp, fontWeight = FontWeight.Bold)
             }
         }
-        Spacer(Modifier.height(6.dp))
-        Text(item.title, color = Ink, fontSize = 10.sp, fontWeight = FontWeight.Bold,
-            maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 13.sp)
-        Text(statusLabel(item.status), color = Muted, fontSize = 8.sp, maxLines = 1)
+        Spacer(Modifier.height(7.dp))
+        Text(item.title, color = Ink, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+            maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 14.sp)
+        Text(statusLabel(item.status), color = Muted, fontSize = 9.sp, maxLines = 1)
     }
 }
 
 @Composable
 private fun SeriesCover(url: String, modifier: Modifier = Modifier, large: Boolean = false) {
+    val imageModifier = modifier.clip(RoundedCornerShape(12.dp)).background(Panel2)
     if (url.isBlank()) {
-        Box(modifier.clip(RoundedCornerShape(10.dp)).background(Panel2), contentAlignment = Alignment.Center) {
-            Icon(Icons.Default.MenuBook, null, tint = Muted, modifier = Modifier.size(28.dp))
-        }
+        Box(imageModifier, contentAlignment = Alignment.Center) { BrandMark(30) }
     } else {
-        AsyncImage(
+        SubcomposeAsyncImage(
             model = ImageRequest.Builder(LocalContext.current)
                 .data(url)
-                .memoryCacheKey("$url::manhwaku-native-v1")
-                .diskCacheKey("$url::manhwaku-native-v1")
-                .crossfade(120)
+                .memoryCacheKey("$url::manhwaku-native-v2")
+                .diskCacheKey("$url::manhwaku-native-v2")
+                .crossfade(180)
                 .size(if (large) 720 else 480)
                 .build(),
             contentDescription = null,
-            modifier = modifier.clip(RoundedCornerShape(10.dp)).background(Panel2),
-            contentScale = ContentScale.Crop
+            modifier = imageModifier,
+            contentScale = ContentScale.Crop,
+            loading = {
+                Box(
+                    Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Panel2, Panel))),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = Accent, strokeWidth = 2.dp, modifier = Modifier.size(22.dp))
+                }
+            },
+            error = {
+                Box(Modifier.fillMaxSize().background(Panel2), contentAlignment = Alignment.Center) {
+                    BrandMark(30)
+                }
+            }
         )
     }
 }
@@ -633,6 +813,8 @@ private fun DetailScreen(
     var menuStatus by remember { mutableStateOf(false) }
     var loadingMeta by remember(initial.id) { mutableStateOf(false) }
     var loadingMatch by remember(initial.id) { mutableStateOf(true) }
+    var matchError by remember(initial.id) { mutableStateOf("") }
+    var matchRefresh by remember(initial.id) { mutableIntStateOf(0) }
     var mangaDexId by remember(initial.id) { mutableStateOf<String?>(initial.mangaDexId) }
     var availableChapterLanguages by remember(initial.id) { mutableStateOf(listOf("id", "en")) }
     var chapters by remember(initial.id) { mutableStateOf<List<Chapter>>(emptyList()) }
@@ -641,6 +823,7 @@ private fun DetailScreen(
     var selectedLanguage by remember(initial.id) { mutableStateOf("id") }
     var autoFallback by remember(initial.id) { mutableStateOf(false) }
     var hasMore by remember(initial.id) { mutableStateOf(false) }
+    var nextChapterOffset by remember(initial.id) { mutableIntStateOf(0) }
     var moreLoading by remember(initial.id) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val uriHandler = LocalUriHandler.current
@@ -657,41 +840,59 @@ private fun DetailScreen(
         publisherUrl = extra.publisherUrl.ifBlank { base.publisherUrl }
     )
 
-    LaunchedEffect(initial.id, initial.title) {
+    LaunchedEffect(initial.id, initial.title, matchRefresh) {
         loadingMeta = true
         loadingMatch = true
-        val full = repository.fullMetadata(initial)
-        if (full != null) item = mergeMetadata(item, full)
-        val freshMatch = repository.matchMangaDex(initial.copy(title = canonicalTitle(initial.title)))
-        mangaDexId = freshMatch?.mangaDexId
-        if (freshMatch != null) {
-            availableChapterLanguages = (listOf("id", "en") + freshMatch.availableLanguages).distinct()
-            item = item.copy(
-                title = if (item.title.contains("pre-serialization", true)) freshMatch.title else item.title,
-                cover = freshMatch.cover.ifBlank { item.cover },
-                coverLarge = freshMatch.coverLarge.ifBlank { item.coverLarge },
-                description = item.description.ifBlank { freshMatch.description },
-                author = item.author.ifBlank { freshMatch.author }
-            )
+        matchError = ""
+        try {
+            val full = repository.fullMetadata(initial)
+            if (full != null) item = mergeMetadata(item, full)
+            val freshMatch = repository.matchMangaDex(initial.copy(title = canonicalTitle(initial.title)))
+            mangaDexId = freshMatch?.mangaDexId
+            if (freshMatch != null) {
+                availableChapterLanguages = (listOf("id", "en") + freshMatch.availableLanguages).distinct()
+                item = item.copy(
+                    title = if (item.title.contains("pre-serialization", true)) freshMatch.title else item.title,
+                    cover = freshMatch.cover.ifBlank { item.cover },
+                    coverLarge = freshMatch.coverLarge.ifBlank { item.coverLarge },
+                    description = item.description.ifBlank { freshMatch.description },
+                    author = item.author.ifBlank { freshMatch.author },
+                    mangaDexId = freshMatch.mangaDexId,
+                    contentRating = freshMatch.contentRating
+                )
+            }
+        } catch (failure: Exception) {
+            if (failure is kotlinx.coroutines.CancellationException) throw failure
+            mangaDexId = null
+            matchError = failure.message ?: "Pencocokan sumber chapter gagal."
+        } finally {
+            loadingMeta = false
+            loadingMatch = false
         }
-        loadingMeta = false
-        loadingMatch = false
+    }
+
+    fun applyChapterPage(result: com.manhwaku.reader.data.ChapterPage) {
+        chapters = result.chapters
+        nextChapterOffset = result.nextOffset
+        hasMore = result.hasMore
+        if (result.usedFallback) {
+            autoFallback = true
+            selectedLanguage = "all"
+        }
     }
 
     LaunchedEffect(mangaDexId, selectedLanguage) {
         val id = mangaDexId ?: return@LaunchedEffect
+        val requestedLanguage = selectedLanguage
         chaptersLoading = true
         chaptersError = ""
         chapters = emptyList()
-        autoFallback = false
+        hasMore = false
+        nextChapterOffset = 0
+        if (requestedLanguage != "all") autoFallback = false
         try {
-            val result = repository.chapters(id, selectedLanguage, 0)
-            chapters = result.first
-            hasMore = result.first.size == 100
-            if (result.second) {
-                autoFallback = true
-                selectedLanguage = "all"
-            }
+            val result = repository.chapters(item.copy(mangaDexId = id), requestedLanguage, 0)
+            applyChapterPage(result)
         } catch (error: Exception) {
             chaptersError = error.message ?: "Chapter gagal dimuat."
         } finally {
@@ -715,7 +916,7 @@ private fun DetailScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Kembali", tint = Ink) }
-            Text(item.title, color = Ink, fontSize = 15.sp, fontWeight = FontWeight.Bold,
+            Text("Detail komik", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.Bold,
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             IconButton(onClick = ::toggleFavorite) {
                 Icon(if (saved) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
@@ -799,8 +1000,8 @@ private fun DetailScreen(
             ) {
                 item { Text("Sinopsis", color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Black) }
                 item {
-                    Text(item.description.ifBlank { "Sinopsis belum tersedia." },
-                        color = Color(0xFFD2D9E4), fontSize = 12.sp, lineHeight = 18.sp,
+                    Text(cleanSynopsis(item.description).ifBlank { "Sinopsis belum tersedia." },
+                        color = Color(0xFFE0E6F1), fontSize = 13.sp, lineHeight = 20.sp,
                         modifier = Modifier.padding(top = 9.dp))
                 }
                 if (loadingMeta) item {
@@ -814,7 +1015,6 @@ private fun DetailScreen(
                 item { InfoLine("Status", statusLabel(item.status)) }
                 if (item.author.isNotBlank()) item { InfoLine("Kreator", item.author) }
                 if (item.language != "unknown") item { InfoLine("Bahasa asli", item.language.uppercase()) }
-                item { InfoLine("Metadata", item.source) }
                 if (item.publisherUrl.isNotBlank()) item {
                     OutlinedButton(
                         onClick = { runCatching { uriHandler.openUri(item.publisherUrl) } },
@@ -826,12 +1026,6 @@ private fun DetailScreen(
                         Spacer(Modifier.width(7.dp))
                         Text("Buka halaman penerbit resmi")
                     }
-                }
-                item {
-                    Text(
-                        "Metadata dari MangaBaka. Ketersediaan chapter bergantung pada bahasa dan sumber yang terhubung.",
-                        color = Muted, fontSize = 9.sp, lineHeight = 13.sp, modifier = Modifier.padding(top = 20.dp)
-                    )
                 }
             }
         } else {
@@ -863,17 +1057,26 @@ private fun DetailScreen(
                         }
                     }
                     IconButton(onClick = {
-                        selectedLanguage = selectedLanguage
                         scope.launch {
+                            if (chaptersLoading) return@launch
+                            if (mangaDexId == null) {
+                                matchRefresh += 1
+                                return@launch
+                            }
+                            if (selectedLanguage != "all") autoFallback = false
                             chaptersLoading = true
+                            chaptersError = ""
+                            chapters = emptyList()
+                            hasMore = false
+                            nextChapterOffset = 0
                             try {
-                                val result = repository.chapters(mangaDexId.orEmpty(), selectedLanguage, 0)
-                                chapters = result.first
-                                if (result.second) { autoFallback = true; selectedLanguage = "all" }
-                                chaptersError = ""
+                                val result = repository.chapters(item.copy(mangaDexId = mangaDexId), selectedLanguage, 0)
+                                applyChapterPage(result)
                             } catch (e: Exception) {
                                 chaptersError = e.message ?: "Chapter gagal dimuat."
-                            } finally { chaptersLoading = false }
+                            } finally {
+                                chaptersLoading = false
+                            }
                         }
                     }) { Icon(Icons.Default.Refresh, "Muat ulang", tint = Ink) }
                 }
@@ -888,24 +1091,46 @@ private fun DetailScreen(
                 }
 
                 when {
-                    loadingMatch || chaptersLoading && chapters.isEmpty() -> LoadingState("Memuat daftar chapter…")
-                    mangaDexId == null -> EmptyState(
-                        "Sumber chapter belum terhubung",
-                        "Judul tersedia di katalog, tetapi feed chapter belum ditemukan pada sumber yang terhubung.",
-                        if (item.publisherUrl.isNotBlank()) "Buka penerbit" else null
+                    loadingMatch || chaptersLoading && chapters.isEmpty() -> LoadingState("Mencari sumber chapter…")
+                    matchError.isNotBlank() -> ErrorState(matchError, "Coba lagi") {
+                        matchRefresh += 1
+                    }
+                    mangaDexId == null -> Column(
+                        Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        if (item.publisherUrl.isNotBlank()) runCatching { uriHandler.openUri(item.publisherUrl) }
+                        EmptyState(
+                            "Chapter belum tersedia di pembaca",
+                            "Katalog menyediakan metadata, tetapi sumber chapter belum terhubung untuk judul ini.",
+                            "Coba cocokkan lagi"
+                        ) { matchRefresh += 1 }
+                        if (item.publisherUrl.isNotBlank()) {
+                            OutlinedButton(
+                                onClick = { runCatching { uriHandler.openUri(item.publisherUrl) } },
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Accent),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Stroke)
+                            ) {
+                                Icon(Icons.Default.OpenInNew, null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(7.dp))
+                                Text("Baca di platform resmi")
+                            }
+                        }
                     }
                     chaptersError.isNotBlank() && chapters.isEmpty() -> ErrorState(chaptersError, "Coba lagi") {
                         scope.launch {
+                            if (chaptersLoading) return@launch
                             chaptersLoading = true
+                            chaptersError = ""
+                            hasMore = false
+                            nextChapterOffset = 0
                             try {
-                                val result = repository.chapters(mangaDexId!!, selectedLanguage, 0)
-                                chapters = result.first
-                                if (result.second) { autoFallback = true; selectedLanguage = "all" }
-                                chaptersError = ""
-                            } catch (e: Exception) { chaptersError = e.message ?: "Chapter gagal dimuat." }
-                            finally { chaptersLoading = false }
+                                val result = repository.chapters(item.copy(mangaDexId = mangaDexId), selectedLanguage, 0)
+                                applyChapterPage(result)
+                            } catch (e: Exception) {
+                                chaptersError = e.message ?: "Chapter gagal dimuat."
+                            } finally {
+                                chaptersLoading = false
+                            }
                         }
                     }
                     chapters.isEmpty() -> EmptyState(
@@ -947,19 +1172,35 @@ private fun DetailScreen(
                                 }
                                 HorizontalDivider(color = Stroke, thickness = .5.dp)
                             }
+                            if (chaptersError.isNotBlank() && chapters.isNotEmpty()) item {
+                                Text(
+                                    chaptersError,
+                                    color = Muted,
+                                    fontSize = 10.sp,
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                                )
+                            }
                             if (hasMore) item {
                                 OutlinedButton(
                                     onClick = {
                                         scope.launch {
+                                            if (moreLoading || chaptersLoading) return@launch
                                             moreLoading = true
+                                            chaptersError = ""
+                                            val requestedOffset = nextChapterOffset
                                             try {
-                                                val result = repository.chapters(mangaDexId!!, selectedLanguage, chapters.size)
-                                                chapters = (chapters + result.first).distinctBy { it.id }
-                                                hasMore = result.first.size == 100
-                                            } catch (e: Exception) { chaptersError = e.message ?: "Tidak dapat memuat chapter berikutnya." }
-                                            finally { moreLoading = false }
+                                                val result = repository.chapters(item.copy(mangaDexId = mangaDexId), selectedLanguage, requestedOffset)
+                                                chapters = (chapters + result.chapters).distinctBy { it.id }
+                                                nextChapterOffset = result.nextOffset
+                                                hasMore = result.hasMore && result.nextOffset > requestedOffset
+                                            } catch (e: Exception) {
+                                                chaptersError = e.message ?: "Tidak dapat memuat chapter berikutnya."
+                                            } finally {
+                                                moreLoading = false
+                                            }
                                         }
                                     },
+                                    enabled = !moreLoading && !chaptersLoading,
                                     modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
                                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Accent),
                                     border = androidx.compose.foundation.BorderStroke(1.dp, Stroke)
@@ -1002,14 +1243,21 @@ private fun ReaderScreen(
 
     Column(Modifier.fillMaxSize().background(Color.Black)) {
         Row(
-            Modifier.fillMaxWidth().background(Color(0xFF05070C)).padding(horizontal = 4.dp, vertical = 5.dp),
+            Modifier.fillMaxWidth()
+                .background(Brush.verticalGradient(listOf(Color(0xFF121B2A), Color(0xFF080B13))))
+                .padding(horizontal = 4.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Kembali", tint = Ink) }
             Column(Modifier.weight(1f)) {
                 Text(series.title, color = Ink, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("Chapter ${chapter.number} · ${languageName(chapter.language)}",
-                    color = Muted, fontSize = 9.sp)
+                Text(
+                    "Chapter ${chapter.number} · ${languageName(chapter.language)} · ${chapter.group.ifBlank { "Grup tidak tercantum" }}",
+                    color = Muted,
+                    fontSize = 9.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
             IconButton(onClick = { verticalMode = !verticalMode }) {
                 Icon(Icons.Default.MenuBook, "Ganti mode baca", tint = Accent)
@@ -1028,25 +1276,68 @@ private fun ReaderScreen(
             pages.isNotEmpty() && verticalMode -> {
                 LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
                     items(pages.size) { index ->
-                        AsyncImage(
-                            model = ImageRequest.Builder(LocalContext.current).data(pages[index])
-                                .memoryCacheKey(pages[index]).diskCacheKey(pages[index])
-                                .crossfade(100).size(1280).build(),
-                            contentDescription = "Halaman ${index + 1}",
-                            modifier = Modifier.fillMaxWidth(),
-                            contentScale = ContentScale.FillWidth
+                        ReaderPageImage(
+                            url = pages[index],
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 280.dp),
+                            pageScale = ContentScale.FillWidth
                         )
                     }
                 }
             }
             pages.isNotEmpty() -> PagedReader(pages, Modifier.weight(1f).fillMaxWidth())
         }
-        Text(
-            "Sumber: MangaDex · Grup: ${chapter.group.ifBlank { "tidak tercantum" }}",
-            color = Muted, fontSize = 9.sp,
-            modifier = Modifier.fillMaxWidth().background(Color(0xFF05070C)).padding(8.dp)
-        )
+        if (loading) {
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth().height(2.dp),
+                color = Accent,
+                trackColor = Panel
+            )
+        }
     }
+}
+
+@Composable
+private fun ReaderPageImage(
+    url: String,
+    modifier: Modifier,
+    pageScale: ContentScale
+) {
+    SubcomposeAsyncImage(
+        model = ImageRequest.Builder(LocalContext.current)
+            .data(url)
+            .memoryCacheKey("$url::reader-v3")
+            .diskCacheKey("$url::reader-v3")
+            .crossfade(160)
+            .size(1440)
+            .build(),
+        contentDescription = "Halaman komik",
+        modifier = modifier.background(Color(0xFF090E18)),
+        contentScale = pageScale,
+        loading = {
+            Box(
+                Modifier.fillMaxSize().background(Color(0xFF090E18)),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(
+                    color = Accent,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(25.dp)
+                )
+            }
+        },
+        error = {
+            Box(
+                Modifier.fillMaxSize().background(Color(0xFF090E18)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "Halaman tidak dapat dimuat",
+                    color = Muted,
+                    fontSize = 11.sp
+                )
+            }
+        }
+    )
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -1055,13 +1346,10 @@ private fun PagedReader(pages: List<String>, modifier: Modifier = Modifier) {
     val pagerState = rememberPagerState(pageCount = { pages.size })
     Box(modifier.background(Color.Black)) {
         HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { index ->
-            AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current).data(pages[index])
-                    .memoryCacheKey(pages[index]).diskCacheKey(pages[index])
-                    .crossfade(100).size(1280).build(),
-                contentDescription = "Halaman ${index + 1}",
+            ReaderPageImage(
+                url = pages[index],
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Fit
+                pageScale = ContentScale.Fit
             )
         }
         Text(
@@ -1115,11 +1403,25 @@ private fun InfoLine(label: String, value: String) {
 
 @Composable
 private fun LoadingState(message: String) {
-    Box(Modifier.fillMaxWidth().padding(26.dp), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            CircularProgressIndicator(color = Accent, strokeWidth = 2.dp, modifier = Modifier.size(25.dp))
+    Box(
+        Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 22.dp)
+            .heightIn(min = 210.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            Modifier.fillMaxWidth()
+                .clip(RoundedCornerShape(24.dp))
+                .background(
+                    Brush.linearGradient(listOf(Panel2.copy(alpha = 0.92f), Panel.copy(alpha = 0.96f)))
+                )
+                .padding(vertical = 28.dp, horizontal = 22.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            BrandMark(58)
+            Spacer(Modifier.height(18.dp))
+            CircularProgressIndicator(color = Accent, strokeWidth = 2.5.dp, modifier = Modifier.size(24.dp))
             Spacer(Modifier.height(12.dp))
-            Text(message, color = Muted, fontSize = 11.sp)
+            Text(message, color = Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }
@@ -1128,9 +1430,7 @@ private fun LoadingState(message: String) {
 private fun EmptyState(title: String, message: String, action: String?, onAction: () -> Unit) {
     Box(Modifier.fillMaxWidth().padding(20.dp).heightIn(min = 210.dp), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(Modifier.size(64.dp).clip(RoundedCornerShape(20.dp)).background(Panel), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.MenuBook, null, tint = Accent, modifier = Modifier.size(31.dp))
-            }
+            BrandMark(62)
             Spacer(Modifier.height(15.dp))
             Text(title, color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Black)
             Spacer(Modifier.height(7.dp))
@@ -1150,7 +1450,7 @@ private fun EmptyState(title: String, message: String, action: String?, onAction
 
 @Composable
 private fun ErrorState(message: String, action: String, onAction: () -> Unit) {
-    EmptyState("Terjadi kendala", message, action, onAction)
+    EmptyState("Sumber sedang bermasalah", message, action, onAction)
 }
 
 private fun typeLabel(value: String): String = when (value.lowercase()) {
@@ -1158,6 +1458,7 @@ private fun typeLabel(value: String): String = when (value.lowercase()) {
     "manhwa" -> "Manhwa"
     "manhua" -> "Manhua"
     "novel" -> "Novel"
+    "lightnovel" -> "Light Novel"
     "oel" -> "Komik original"
     "webtoon" -> "Webtoon"
     else -> "Komik"

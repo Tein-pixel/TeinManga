@@ -185,6 +185,23 @@ data class Chapter(
     val group: String
 )
 
+/**
+ * A MangaDex feed page. nextOffset counts raw API rows, not only rows kept
+ * after local validation, so filtered chapter rows cannot cause duplicates
+ * or skipped records during pagination.
+ */
+data class ChapterPage(
+    val chapters: List<Chapter>,
+    val nextOffset: Int,
+    val hasMore: Boolean,
+    val usedFallback: Boolean = false
+)
+
+data class CatalogSearchResult(
+    val series: List<Series>,
+    val excludedByContentRating: Int = 0
+)
+
 fun JSONArray?.toStringList(): List<String> {
     if (this == null) return emptyList()
     return (0 until length()).mapNotNull { index ->
@@ -194,6 +211,26 @@ fun JSONArray?.toStringList(): List<String> {
             else -> null
         }
     }.filter { it.isNotBlank() && it != "null" }
+}
+
+fun cleanSynopsis(input: String): String {
+    if (input.isBlank()) return ""
+    val linkPattern = Regex("""\[([^\]]+)\]\((?:https?://[^)]+)\)""")
+    val headingPattern = Regex("""^#{1,6}\s*""")
+    val bulletPattern = Regex("""^[-*]\s+""")
+
+    return input.lineSequence()
+        .map { rawLine ->
+            var line = rawLine.trim()
+            line = linkPattern.replace(line) { match -> match.groupValues[1] }
+            line = line.replace(Regex("""\*\*(.*?)\*\*""")) { match -> match.groupValues[1] }
+            line = headingPattern.replace(line, "")
+            line = bulletPattern.replace(line, "• ")
+            line
+        }
+        .joinToString("\n")
+        .replace(Regex("""\n{3,}"""), "\n\n")
+        .trim()
 }
 
 fun normalizeTitle(input: String): String =
@@ -298,8 +335,9 @@ private fun hasRestrictedTags(tags: JSONArray?): Boolean {
             nameObject.keys().asSequence().map { nameObject.optString(it) }.joinToString(" ")
         } else attrs.optString("name")
         if (blocked.any { name.contains(it, ignoreCase = true) }) return true
-        val rating = attrs.optString("contentRating").lowercase(Locale.ROOT)
-        if (rating in setOf("suggestive", "erotica", "pornographic")) return true
+        val rating = attrs.optString("contentRating", attrs.optString("content_rating"))
+            .lowercase(Locale.ROOT)
+        if (rating in setOf("suggestive", "erotica", "pornographic", "mature", "adult")) return true
     }
     return false
 }

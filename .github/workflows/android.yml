@@ -2,6 +2,8 @@ name: ManhwaKu Kotlin Android
 
 on:
   push:
+    branches: [ "**" ]
+  pull_request:
     branches: [ "main" ]
     paths:
       - "app/**"
@@ -24,16 +26,18 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - name: Set up Gradle 8.9
+      - name: Set up Gradle 8.10.2
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.9"
+          gradle-version: "8.10.2"
+      - name: Run native regression tests
+        run: gradle --no-daemon testDebugUnitTest
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ManhwaKu-Kotlin-v3.0.0-debug-apk
+          name: ManhwaKu-Kotlin-v3.0.3-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14

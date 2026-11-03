@@ -12,8 +12,8 @@ android {
         applicationId = "com.manhwaku.reader"
         minSdk = 29
         targetSdk = 35
-        versionCode = 16
-        versionName = "3.0.0"
+        versionCode = 19
+        versionName = "3.0.3"
     }
 
     buildTypes {
@@ -32,6 +32,9 @@ android {
     buildFeatures {
         compose = true
     }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 dependencies {
@@ -48,4 +51,7 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
+
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.14.1")
 }
