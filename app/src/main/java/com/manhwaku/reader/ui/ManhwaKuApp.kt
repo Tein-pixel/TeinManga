@@ -2,7 +2,11 @@ package com.manhwaku.reader.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -41,12 +45,19 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -293,29 +304,54 @@ private fun HomeScreen(
 
 @Composable
 private fun BrandMark(size: Int) {
+    val shape = RoundedCornerShape((size * 0.30f).dp)
     Box(
-        Modifier.size(size.dp)
-            .clip(RoundedCornerShape((size * 0.30f).dp))
+        Modifier.shadow((size * 0.20f).dp, shape)
+            .size(size.dp)
+            .clip(shape)
             .background(
                 Brush.linearGradient(
-                    listOf(Color(0xFF6DDCFF), Color(0xFF718BFF), Color(0xFF9B78F2))
+                    listOf(Color(0xFF65DFF2), Color(0xFF658CFF), Color(0xFFAC7CF1))
                 )
             ),
         contentAlignment = Alignment.Center
     ) {
         Box(
-            Modifier.fillMaxSize(0.78f)
-                .clip(RoundedCornerShape((size * 0.23f).dp))
-                .background(Color.White.copy(alpha = 0.18f)),
+            Modifier.fillMaxSize(0.86f)
+                .clip(RoundedCornerShape((size * 0.25f).dp))
+                .background(Color.White.copy(alpha = 0.13f)),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                "M",
-                color = Color(0xFF091321),
-                fontSize = (size * 0.52f).sp,
-                fontWeight = FontWeight.Black,
-                letterSpacing = (-1.5).sp
-            )
+            Canvas(Modifier.fillMaxSize(0.68f)) {
+                val w = this.size.width
+                val h = this.size.height
+                val ink = Color(0xFF091626)
+                val detail = Color(0xFF2E638B)
+                val pageLeft = Path().apply {
+                    moveTo(w * 0.48f, h * 0.25f)
+                    cubicTo(w * 0.34f, h * 0.17f, w * 0.16f, h * 0.18f, w * 0.10f, h * 0.29f)
+                    lineTo(w * 0.10f, h * 0.73f)
+                    cubicTo(w * 0.10f, h * 0.79f, w * 0.16f, h * 0.82f, w * 0.23f, h * 0.78f)
+                    cubicTo(w * 0.33f, h * 0.73f, w * 0.42f, h * 0.76f, w * 0.48f, h * 0.84f)
+                    close()
+                }
+                val pageRight = Path().apply {
+                    moveTo(w * 0.52f, h * 0.25f)
+                    cubicTo(w * 0.66f, h * 0.17f, w * 0.84f, h * 0.18f, w * 0.90f, h * 0.29f)
+                    lineTo(w * 0.90f, h * 0.73f)
+                    cubicTo(w * 0.90f, h * 0.79f, w * 0.84f, h * 0.82f, w * 0.77f, h * 0.78f)
+                    cubicTo(w * 0.67f, h * 0.73f, w * 0.58f, h * 0.76f, w * 0.52f, h * 0.84f)
+                    close()
+                }
+                drawPath(pageLeft, ink)
+                drawPath(pageRight, ink)
+                val lineWidth = w * 0.035f
+                drawLine(detail, Offset(w * 0.20f, h * 0.40f), Offset(w * 0.40f, h * 0.37f), lineWidth, cap = StrokeCap.Round)
+                drawLine(detail, Offset(w * 0.20f, h * 0.51f), Offset(w * 0.40f, h * 0.48f), lineWidth, cap = StrokeCap.Round)
+                drawLine(detail, Offset(w * 0.60f, h * 0.37f), Offset(w * 0.80f, h * 0.40f), lineWidth, cap = StrokeCap.Round)
+                drawLine(detail, Offset(w * 0.60f, h * 0.48f), Offset(w * 0.80f, h * 0.51f), lineWidth, cap = StrokeCap.Round)
+                drawLine(ink, Offset(w * 0.50f, h * 0.25f), Offset(w * 0.50f, h * 0.83f), w * 0.045f, cap = StrokeCap.Round)
+            }
         }
     }
 }
@@ -327,9 +363,12 @@ private fun RowScope.QuickAction(label: String, icon: androidx.compose.ui.graphi
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
-            Modifier.size(48.dp).clip(RoundedCornerShape(16.dp)).background(Panel),
+            Modifier.size(52.dp)
+                .clip(RoundedCornerShape(19.dp))
+                .background(Brush.linearGradient(listOf(Panel2, Panel)))
+                .border(1.dp, Stroke.copy(alpha = 0.75f), RoundedCornerShape(19.dp)),
             contentAlignment = Alignment.Center
-        ) { Icon(icon, null, tint = Accent, modifier = Modifier.size(21.dp)) }
+        ) { Icon(icon, null, tint = Accent, modifier = Modifier.size(23.dp)) }
         Spacer(Modifier.height(6.dp))
         Text(label, color = Muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
     }
@@ -356,20 +395,36 @@ private fun HeroShelf(items: List<Series>, onOpen: (Series) -> Unit) {
     ) {
         items(items, key = { it.id }) { item ->
             Row(
-                Modifier.width(300.dp).height(178.dp).clip(RoundedCornerShape(18.dp))
-                    .background(Brush.linearGradient(listOf(Color(0xFF18324A), Color(0xFF101725))))
-                    .clickable { onOpen(item) }.padding(14.dp),
+                Modifier.width(312.dp).height(184.dp)
+                    .clip(RoundedCornerShape(23.dp))
+                    .background(
+                        Brush.linearGradient(
+                            listOf(Color(0xFF203B5A), Color(0xFF17263F), Color(0xFF111827))
+                        )
+                    )
+                    .border(
+                        1.dp,
+                        Brush.linearGradient(listOf(Color(0xFF6FC7FF).copy(alpha = 0.55f), Stroke, Color(0xFF9F8BFF).copy(alpha = 0.25f))),
+                        RoundedCornerShape(23.dp)
+                    )
+                    .clickable { onOpen(item) }.padding(13.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                SeriesCover(item.cover, Modifier.width(104.dp).fillMaxHeight(), true)
+                SeriesCover(item.cover, Modifier.width(110.dp).fillMaxHeight(), true)
                 Spacer(Modifier.width(13.dp))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
-                    Text(typeLabel(item.type).uppercase(), color = Accent, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                    Text(typeLabel(item.type).uppercase(), color = Accent, fontSize = 9.sp, fontWeight = FontWeight.Black, letterSpacing = 1.1.sp)
                     Spacer(Modifier.height(7.dp))
-                    Text(item.title, color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Black, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    Text(item.title, color = Ink, fontSize = 17.sp, lineHeight = 21.sp, fontWeight = FontWeight.ExtraBold, maxLines = 3, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.height(7.dp))
-                    Text(item.description.ifBlank { "Buka untuk melihat detail dan chapter yang tersedia." },
-                        color = Muted, fontSize = 10.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        cleanSynopsis(item.description).ifBlank { typeLabel(item.type) },
+                        color = Muted,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
         }
@@ -388,12 +443,23 @@ private fun HorizontalShelf(items: List<Series>, onOpen: (Series) -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         items(items, key = { it.id }) { item ->
-            Column(Modifier.width(112.dp).clickable { onOpen(item) }) {
-                SeriesCover(item.cover, Modifier.fillMaxWidth().height(148.dp))
-                Spacer(Modifier.height(7.dp))
-                Text(item.title, color = Ink, fontSize = 11.sp, fontWeight = FontWeight.Bold,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(typeLabel(item.type), color = Muted, fontSize = 9.sp)
+            Column(Modifier.width(126.dp).clickable { onOpen(item) }) {
+                Box {
+                    SeriesCover(item.cover, Modifier.fillMaxWidth().aspectRatio(0.70f))
+                    Box(
+                        Modifier.align(Alignment.TopStart).padding(6.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xCC0B1423))
+                            .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 7.dp, vertical = 4.dp)
+                    ) {
+                        Text(typeLabel(item.type).uppercase(), color = Accent, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(item.title, color = Ink, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 15.sp)
+                Text(statusLabel(item.status), color = Muted, fontSize = 10.sp)
             }
         }
     }
@@ -417,6 +483,7 @@ private fun CatalogScreen(
     var error by remember { mutableStateOf("") }
     var searched by remember { mutableStateOf(!isSearch) }
     val scope = rememberCoroutineScope()
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     val types = listOf(
         "Semua" to "all",
@@ -481,14 +548,21 @@ private fun CatalogScreen(
                         focusedBorderColor = Accent, unfocusedBorderColor = Stroke,
                         focusedContainerColor = Panel, unfocusedContainerColor = Panel
                     ),
-                    shape = RoundedCornerShape(14.dp)
+                    shape = RoundedCornerShape(17.dp),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(
+                        onSearch = {
+                            keyboardController?.hide()
+                            load(true, query.trim())
+                        }
+                    )
                 )
                 Spacer(Modifier.width(7.dp))
                 Button(
                     onClick = { load(true, query.trim()) },
                     colors = ButtonDefaults.buttonColors(containerColor = Accent),
-                    shape = RoundedCornerShape(13.dp),
-                    contentPadding = PaddingValues(horizontal = 13.dp, vertical = 14.dp)
+                    shape = RoundedCornerShape(16.dp),
+                    contentPadding = PaddingValues(horizontal = 15.dp, vertical = 15.dp)
                 ) {
                     if (loading) {
                         CircularProgressIndicator(
@@ -656,19 +730,22 @@ private fun HistoryScreen(library: LibraryStore, onOpen: (Series) -> Unit) {
 @Composable
 private fun SeriesCard(item: Series, onOpen: (Series) -> Unit) {
     Column(Modifier.fillMaxWidth().clickable { onOpen(item) }) {
-        Box(Modifier.fillMaxWidth().height(154.dp)) {
+        Box(Modifier.fillMaxWidth().aspectRatio(0.70f)) {
             SeriesCover(item.cover, Modifier.fillMaxSize())
             Box(
-                Modifier.align(Alignment.TopStart).padding(5.dp)
-                    .clip(RoundedCornerShape(5.dp)).background(Accent).padding(horizontal = 6.dp, vertical = 3.dp)
+                Modifier.align(Alignment.TopStart).padding(6.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xCC0B1423))
+                    .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 7.dp, vertical = 4.dp)
             ) {
-                Text(typeLabel(item.type).uppercase(), color = Bg, fontSize = 7.sp, fontWeight = FontWeight.Black)
+                Text(typeLabel(item.type).uppercase(), color = Accent, fontSize = 8.sp, fontWeight = FontWeight.Bold)
             }
         }
-        Spacer(Modifier.height(6.dp))
-        Text(item.title, color = Ink, fontSize = 10.sp, fontWeight = FontWeight.Bold,
-            maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 13.sp)
-        Text(statusLabel(item.status), color = Muted, fontSize = 8.sp, maxLines = 1)
+        Spacer(Modifier.height(7.dp))
+        Text(item.title, color = Ink, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+            maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 14.sp)
+        Text(statusLabel(item.status), color = Muted, fontSize = 9.sp, maxLines = 1)
     }
 }
 
@@ -1137,7 +1214,9 @@ private fun ReaderScreen(
 
     Column(Modifier.fillMaxSize().background(Color.Black)) {
         Row(
-            Modifier.fillMaxWidth().background(Color(0xFF05070C)).padding(horizontal = 4.dp, vertical = 5.dp),
+            Modifier.fillMaxWidth()
+                .background(Brush.verticalGradient(listOf(Color(0xFF121B2A), Color(0xFF080B13))))
+                .padding(horizontal = 4.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Kembali", tint = Ink) }
@@ -1176,11 +1255,13 @@ private fun ReaderScreen(
             }
             pages.isNotEmpty() -> PagedReader(pages, Modifier.weight(1f).fillMaxWidth())
         }
-        Text(
-            "Sumber: MangaDex · Grup: ${chapter.group.ifBlank { "tidak tercantum" }}",
-            color = Muted, fontSize = 9.sp,
-            modifier = Modifier.fillMaxWidth().background(Color(0xFF05070C)).padding(8.dp)
-        )
+        if (loading) {
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth().height(2.dp),
+                color = Accent,
+                trackColor = Panel
+            )
+        }
     }
 }
 
