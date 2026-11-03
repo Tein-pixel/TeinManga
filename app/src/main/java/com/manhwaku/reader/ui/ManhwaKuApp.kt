@@ -60,7 +60,6 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import com.manhwaku.reader.data.Chapter
@@ -1246,13 +1245,10 @@ private fun ReaderScreen(
             pages.isNotEmpty() && verticalMode -> {
                 LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
                     items(pages.size) { index ->
-                        AsyncImage(
-                            model = ImageRequest.Builder(LocalContext.current).data(pages[index])
-                                .memoryCacheKey(pages[index]).diskCacheKey(pages[index])
-                                .crossfade(100).size(1280).build(),
-                            contentDescription = "Halaman ${index + 1}",
-                            modifier = Modifier.fillMaxWidth(),
-                            contentScale = ContentScale.FillWidth
+                        ReaderPageImage(
+                            url = pages[index],
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 280.dp),
+                            pageScale = ContentScale.FillWidth
                         )
                     }
                 }
@@ -1269,19 +1265,60 @@ private fun ReaderScreen(
     }
 }
 
+@Composable
+private fun ReaderPageImage(
+    url: String,
+    modifier: Modifier,
+    pageScale: ContentScale
+) {
+    SubcomposeAsyncImage(
+        model = ImageRequest.Builder(LocalContext.current)
+            .data(url)
+            .memoryCacheKey("$url::reader-v3")
+            .diskCacheKey("$url::reader-v3")
+            .crossfade(160)
+            .size(1440)
+            .build(),
+        contentDescription = "Halaman komik",
+        modifier = modifier.background(Color(0xFF090E18)),
+        contentScale = pageScale,
+        loading = {
+            Box(
+                Modifier.fillMaxSize().background(Color(0xFF090E18)),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(
+                    color = Accent,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(25.dp)
+                )
+            }
+        },
+        error = {
+            Box(
+                Modifier.fillMaxSize().background(Color(0xFF090E18)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "Halaman tidak dapat dimuat",
+                    color = Muted,
+                    fontSize = 11.sp
+                )
+            }
+        }
+    )
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PagedReader(pages: List<String>, modifier: Modifier = Modifier) {
     val pagerState = rememberPagerState(pageCount = { pages.size })
     Box(modifier.background(Color.Black)) {
         HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { index ->
-            AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current).data(pages[index])
-                    .memoryCacheKey(pages[index]).diskCacheKey(pages[index])
-                    .crossfade(100).size(1280).build(),
-                contentDescription = "Halaman ${index + 1}",
+            ReaderPageImage(
+                url = pages[index],
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Fit
+                pageScale = ContentScale.Fit
             )
         }
         Text(
