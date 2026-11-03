@@ -275,10 +275,14 @@ class ManhwaRepository {
     }
 
     suspend fun chapters(
-        mangaId: String,
+        manga: Series,
         language: String = "id",
         offset: Int = 0
     ): ChapterPage = withContext(Dispatchers.IO) {
+        require(manga.contentRating == "safe") {
+            "Chapter hanya dapat dimuat untuk seri dengan rating aman yang sudah diverifikasi."
+        }
+        val mangaId = manga.mangaDexId.orEmpty()
         require(UUID_PATTERN.matches(mangaId)) { "ID seri MangaDex tidak valid." }
         require(offset >= 0) { "Offset chapter tidak valid." }
 
@@ -353,13 +357,13 @@ internal fun parseChapterFeedResponse(json: JSONObject, offset: Int): ChapterPag
     require(offset >= 0) { "Offset chapter tidak valid." }
     val data = json.optJSONArray("data") ?: JSONArray()
     val uuidPattern = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+    // MangaDex contentRating belongs to the parent manga, not ChapterAttributes.
+    // The repository verifies that parent Series is explicitly safe before requesting this feed.
     val chapters = (0 until data.length()).mapNotNull { index ->
         val row = data.optJSONObject(index) ?: return@mapNotNull null
         val attrs = row.optJSONObject("attributes") ?: return@mapNotNull null
         val pages = attrs.optInt("pages")
-        if (pages <= 0 || attrs.optString("contentRating", "unknown") != "safe") {
-            return@mapNotNull null
-        }
+        if (pages <= 0) return@mapNotNull null
         val id = row.optString("id")
         if (!uuidPattern.matches(id)) return@mapNotNull null
 

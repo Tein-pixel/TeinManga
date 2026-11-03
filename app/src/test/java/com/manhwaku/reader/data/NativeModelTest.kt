@@ -8,6 +8,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlinx.coroutines.runBlocking
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -93,7 +94,7 @@ class NativeModelTest {
                 JSONArray()
                     .put(chapterRecord("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", pages = 18))
                     .put(chapterRecord("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", pages = 0))
-                    .put(chapterRecord("cccccccc-cccc-4ccc-8ccc-cccccccccccc", pages = 22, rating = "mature"))
+                    .put(chapterRecord("cccccccc-cccc-4ccc-8ccc-cccccccccccc", pages = 22))
             )
 
         val page = ManhwaRepository().parseChapterFeedResponse(response, offset = 100)
@@ -121,38 +122,41 @@ class NativeModelTest {
     }
 
     @Test
-    fun chapterParserRejectsMissingAndUnknownContentRatings() {
-        val missingRating = chapterRecord(
-            "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
-            pages = 12
-        ).apply {
-            getJSONObject("attributes").remove("contentRating")
-        }
-        val unknownRating = chapterRecord(
-            "ffffffff-ffff-4fff-8fff-ffffffffffff",
-            pages = 12,
-            rating = "unknown"
-        )
-        val safeRating = chapterRecord(
-            "99999999-9999-4999-8999-999999999999",
-            pages = 12,
-            rating = "safe"
-        )
+    fun chapterFeedAcceptsValidChapterWithoutParentOnlyRatingField() {
+        val first = chapterRecord("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", pages = 12)
+        val second = chapterRecord("ffffffff-ffff-4fff-8fff-ffffffffffff", pages = 15)
+        val invalid = chapterRecord("99999999-9999-4999-8999-999999999999", pages = 0)
         val response = JSONObject().put(
             "data",
-            JSONArray().put(missingRating).put(unknownRating).put(safeRating)
+            JSONArray().put(first).put(second).put(invalid)
         )
 
         val page = ManhwaRepository().parseChapterFeedResponse(response, offset = 0)
 
-        assertEquals(1, page.chapters.size)
-        assertEquals("99999999-9999-4999-8999-999999999999", page.chapters.single().id)
+        assertEquals(2, page.chapters.size)
+        assertEquals(3, page.nextOffset)
+    }
+
+    @Test
+    fun chapterRequestRejectsSeriesWithoutExplicitSafeRating() = runBlocking {
+        val unsafe = Series(
+            id = 1,
+            title = "Test",
+            type = "manhwa",
+            url = "",
+            cover = "",
+            contentRating = "unknown",
+            mangaDexId = "12345678-1234-1234-1234-123456789abc"
+        )
+        val result = runCatching { ManhwaRepository().chapters(unsafe) }
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull() is IllegalArgumentException)
     }
 
     private fun chapterRecord(
         id: String,
-        pages: Int,
-        rating: String = "safe"
+        pages: Int
     ) = JSONObject()
         .put("id", id)
         .put(
@@ -162,7 +166,6 @@ class NativeModelTest {
                 .put("title", "Chapter test")
                 .put("translatedLanguage", "id")
                 .put("pages", pages)
-                .put("contentRating", rating)
         )
         .put(
             "relationships",

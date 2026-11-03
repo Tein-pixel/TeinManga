@@ -50,6 +50,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import com.manhwaku.reader.data.Chapter
@@ -763,7 +764,9 @@ private fun DetailScreen(
                     cover = freshMatch.cover.ifBlank { item.cover },
                     coverLarge = freshMatch.coverLarge.ifBlank { item.coverLarge },
                     description = item.description.ifBlank { freshMatch.description },
-                    author = item.author.ifBlank { freshMatch.author }
+                    author = item.author.ifBlank { freshMatch.author },
+                    mangaDexId = freshMatch.mangaDexId,
+                    contentRating = freshMatch.contentRating
                 )
             }
         } catch (failure: Exception) {
@@ -796,7 +799,7 @@ private fun DetailScreen(
         nextChapterOffset = 0
         if (requestedLanguage != "all") autoFallback = false
         try {
-            val result = repository.chapters(id, requestedLanguage, 0)
+            val result = repository.chapters(item.copy(mangaDexId = id), requestedLanguage, 0)
             applyChapterPage(result)
         } catch (error: Exception) {
             chaptersError = error.message ?: "Chapter gagal dimuat."
@@ -975,7 +978,7 @@ private fun DetailScreen(
                             hasMore = false
                             nextChapterOffset = 0
                             try {
-                                val result = repository.chapters(mangaDexId.orEmpty(), selectedLanguage, 0)
+                                val result = repository.chapters(item.copy(mangaDexId = mangaDexId), selectedLanguage, 0)
                                 applyChapterPage(result)
                             } catch (e: Exception) {
                                 chaptersError = e.message ?: "Chapter gagal dimuat."
@@ -1015,7 +1018,7 @@ private fun DetailScreen(
                             hasMore = false
                             nextChapterOffset = 0
                             try {
-                                val result = repository.chapters(mangaDexId!!, selectedLanguage, 0)
+                                val result = repository.chapters(item.copy(mangaDexId = mangaDexId), selectedLanguage, 0)
                                 applyChapterPage(result)
                             } catch (e: Exception) {
                                 chaptersError = e.message ?: "Chapter gagal dimuat."
@@ -1080,7 +1083,7 @@ private fun DetailScreen(
                                             chaptersError = ""
                                             val requestedOffset = nextChapterOffset
                                             try {
-                                                val result = repository.chapters(mangaDexId!!, selectedLanguage, requestedOffset)
+                                                val result = repository.chapters(item.copy(mangaDexId = mangaDexId), selectedLanguage, requestedOffset)
                                                 chapters = (chapters + result.chapters).distinctBy { it.id }
                                                 nextChapterOffset = result.nextOffset
                                                 hasMore = result.hasMore && result.nextOffset > requestedOffset
