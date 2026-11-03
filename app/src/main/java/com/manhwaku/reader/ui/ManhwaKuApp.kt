@@ -217,7 +217,7 @@ private fun HomeScreen(
             title = { Text("ManhwaKu", color = Ink, fontWeight = FontWeight.Black) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Versi 3.0.2 · Kotlin + Jetpack Compose", color = Ink, fontSize = 12.sp)
+                    Text("Versi 3.0.3 · Kotlin + Jetpack Compose", color = Ink, fontSize = 12.sp)
                     Text("Metadata katalog: MangaBaka. Daftar chapter dan reader: MangaDex.", color = Muted, fontSize = 11.sp)
                     Text("Hanya judul dengan rating aman yang ditampilkan. Ketersediaan chapter bergantung pada bahasa dan sumber.", color = Muted, fontSize = 11.sp)
                 }
