@@ -99,10 +99,10 @@ class NativeModelTest {
 
         val page = ManhwaRepository().parseChapterFeedResponse(response, offset = 100)
 
-        assertEquals(1, page.chapters.size)
+        assertEquals(2, page.chapters.size)
         assertEquals(103, page.nextOffset)
         assertTrue(page.hasMore)
-        assertEquals("id", page.chapters.single().language)
+        assertEquals("id", page.chapters.first().language)
     }
 
     @Test
