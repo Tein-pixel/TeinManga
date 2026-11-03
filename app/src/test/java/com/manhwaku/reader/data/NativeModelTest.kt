@@ -62,6 +62,18 @@ class NativeModelTest {
     }
 
     @Test
+    fun mangaBakaSearchPreservesCountHiddenByContentRatingFilter() {
+        val response = JSONObject()
+            .put("excluded_count", 1)
+            .put("data", JSONArray().put(mangaBakaRecord("safe")))
+
+        val result = parseMangaBakaSearchResponse(response)
+
+        assertEquals(1, result.excludedByContentRating)
+        assertEquals(1, result.series.size)
+    }
+
+    @Test
     fun mangaBakaParserAcceptsOnlyExplicitSafeRecords() {
         val safe = mangaBakaRecord("safe")
         val parsed = Series.fromMangaBaka(safe)

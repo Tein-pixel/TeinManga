@@ -197,8 +197,8 @@ private fun HomeScreen(
         try {
             val trendingResult = repository.search(page = 1, latest = false)
             val latestResult = repository.search(page = 1, latest = true)
-            trending = trendingResult
-            latest = latestResult
+            trending = trendingResult.series
+            latest = latestResult.series
             emptyCatalogue = trending.isEmpty() && latest.isEmpty()
         } catch (failure: Exception) {
             if (failure is kotlinx.coroutines.CancellationException) throw failure
@@ -478,6 +478,7 @@ private fun CatalogScreen(
     var loading by remember { mutableStateOf(false) }
     var loadingMore by remember { mutableStateOf(false) }
     var hasMore by remember { mutableStateOf(false) }
+    var hiddenByRating by remember { mutableIntStateOf(0) }
     var error by remember { mutableStateOf("") }
     var searched by remember { mutableStateOf(!isSearch) }
     val scope = rememberCoroutineScope()
@@ -502,16 +503,19 @@ private fun CatalogScreen(
             loading = true
             error = ""
             items = emptyList()
+            hiddenByRating = 0
             page = 1
             searched = true
         } else loadingMore = true
         scope.launch {
             try {
                 val found = repository.search(q, nextPage, type, latest = !isSearch && q.isBlank())
-                items = if (reset) found else (items + found).distinctBy { normalizeTitle(it.title) }
+                items = if (reset) found.series else (items + found.series).distinctBy { normalizeTitle(it.title) }
+                hiddenByRating = if (reset) found.excludedByContentRating
+                    else hiddenByRating + found.excludedByContentRating
                 page = nextPage
-                hasMore = found.size >= 24
-                if (found.isEmpty() && reset) error = ""
+                hasMore = found.series.size >= 24
+                if (found.series.isEmpty() && reset) error = ""
             } catch (failure: Exception) {
                 if (failure is kotlinx.coroutines.CancellationException) throw failure
                 error = failure.message ?: "Pencarian gagal. Periksa koneksi lalu coba lagi."
@@ -614,11 +618,24 @@ private fun CatalogScreen(
                 color = Muted, fontSize = 10.sp, modifier = Modifier.weight(1f))
             IconButton(onClick = { load(true) }) { Icon(Icons.Default.Refresh, "Muat ulang", tint = Muted) }
         }
+        if (isSearch && hiddenByRating > 0) {
+            Text(
+                "$hiddenByRating judul disembunyikan oleh filter rating konten aman.",
+                color = Muted,
+                fontSize = 10.sp,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 4.dp)
+            )
+        }
 
         when {
             !searched -> EmptyState("Temukan cerita", "Cari berdasarkan judul atau pilih jenis komik.", null) {}
             loading && items.isEmpty() -> LoadingState("Mencari judul…")
             error.isNotBlank() && items.isEmpty() -> ErrorState(error, "Coba lagi") { load(true) }
+            items.isEmpty() && hiddenByRating > 0 -> EmptyState(
+                "Hasil dibatasi filter",
+                "$hiddenByRating judul tidak ditampilkan karena ratingnya di luar filter konten aman.",
+                "Cari judul lain"
+            ) { query = ""; load(true, "") }
             items.isEmpty() -> EmptyState("Tidak ditemukan", "Coba judul atau kategori lain.", "Cari lagi") { load(true) }
             else -> {
                 LazyVerticalGrid(
@@ -1078,12 +1095,26 @@ private fun DetailScreen(
                     matchError.isNotBlank() -> ErrorState(matchError, "Coba lagi") {
                         matchRefresh += 1
                     }
-                    mangaDexId == null -> EmptyState(
-                        "Belum ada padanan chapter",
-                        "Judul ini belum memiliki pasangan yang cocok di sumber chapter terhubung.",
-                        "Coba cocokkan lagi"
+                    mangaDexId == null -> Column(
+                        Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        matchRefresh += 1
+                        EmptyState(
+                            "Chapter belum tersedia di pembaca",
+                            "Katalog menyediakan metadata, tetapi sumber chapter belum terhubung untuk judul ini.",
+                            "Coba cocokkan lagi"
+                        ) { matchRefresh += 1 }
+                        if (item.publisherUrl.isNotBlank()) {
+                            OutlinedButton(
+                                onClick = { runCatching { uriHandler.openUri(item.publisherUrl) } },
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Accent),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Stroke)
+                            ) {
+                                Icon(Icons.Default.OpenInNew, null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(7.dp))
+                                Text("Baca di platform resmi")
+                            }
+                        }
                     }
                     chaptersError.isNotBlank() && chapters.isEmpty() -> ErrorState(chaptersError, "Coba lagi") {
                         scope.launch {

@@ -197,6 +197,11 @@ data class ChapterPage(
     val usedFallback: Boolean = false
 )
 
+data class CatalogSearchResult(
+    val series: List<Series>,
+    val excludedByContentRating: Int = 0
+)
+
 fun JSONArray?.toStringList(): List<String> {
     if (this == null) return emptyList()
     return (0 until length()).mapNotNull { index ->

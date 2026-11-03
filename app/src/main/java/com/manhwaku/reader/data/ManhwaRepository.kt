@@ -77,16 +77,16 @@ class ManhwaRepository {
         page: Int = 1,
         type: String = "all",
         latest: Boolean = false
-    ): List<Series> = withContext(Dispatchers.IO) {
+    ): CatalogSearchResult = withContext(Dispatchers.IO) {
         val cleanQuery = canonicalTitle(query).trim()
         var mangaBakaFailure: Exception? = null
-        val mangaBaka = try {
+        val mangaBakaResult = try {
             searchMangaBaka(cleanQuery, page, type, latest)
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
             mangaBakaFailure = error
-            emptyList()
+            CatalogSearchResult(emptyList())
         }
 
         val mangaDexRequested = type in setOf("all", "manga", "manhwa", "manhua", "webtoon")
@@ -103,7 +103,7 @@ class ManhwaRepository {
         } else emptyList()
 
         val merged = LinkedHashMap<String, Series>()
-        mangaBaka.forEach { item ->
+        mangaBakaResult.series.forEach { item ->
             if (item.contentRating == "safe" && !isPreSerialization(item.title)) {
                 merged[normalizeTitle(item.title)] = item
             }
@@ -129,7 +129,10 @@ class ManhwaRepository {
                 mangaBakaFailure ?: mangaDexFailure
             )
         }
-        merged.values.toList()
+        CatalogSearchResult(
+            series = merged.values.toList(),
+            excludedByContentRating = mangaBakaResult.excludedByContentRating
+        )
     }
 
     private fun searchMangaBaka(
@@ -137,8 +140,8 @@ class ManhwaRepository {
         page: Int,
         type: String,
         latest: Boolean
-    ): List<Series> {
-        if (type == "webtoon") return emptyList()
+    ): CatalogSearchResult {
+        if (type == "webtoon") return CatalogSearchResult(emptyList())
         val params = mutableListOf(
             "limit=24",
             "page=${page.coerceAtLeast(1)}",
@@ -152,10 +155,7 @@ class ManhwaRepository {
             params += "type=${encode(apiType)}"
         }
         val json = requestJson("https://api.mangabaka.org/v2/series/search?${params.joinToString("&")}")
-        val data = json.optJSONArray("data") ?: return emptyList()
-        return (0 until data.length()).mapNotNull { index ->
-            data.optJSONObject(index)?.let(Series::fromMangaBaka)
-        }
+        return parseMangaBakaSearchResponse(json)
     }
 
     private fun searchMangaDex(
@@ -396,4 +396,15 @@ internal fun parseChapterFeedResponse(json: JSONObject, offset: Int): ChapterPag
     )
 }
 
+}
+
+internal fun parseMangaBakaSearchResponse(json: JSONObject): CatalogSearchResult {
+    val rows = json.optJSONArray("data") ?: JSONArray()
+    val series = (0 until rows.length()).mapNotNull { index ->
+        rows.optJSONObject(index)?.let(Series::fromMangaBaka)
+    }
+    return CatalogSearchResult(
+        series = series,
+        excludedByContentRating = json.optInt("excluded_count").coerceAtLeast(0)
+    )
 }
