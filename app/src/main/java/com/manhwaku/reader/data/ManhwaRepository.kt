@@ -252,7 +252,7 @@ class ManhwaRepository {
         val canonical = canonicalTitle(item.title)
         val id = item.mangaBakaId ?: runCatching {
             searchMangaBaka(canonical, 1, "all", latest = false)
-                .firstOrNull { normalizeTitle(it.title) == normalizeTitle(canonical) }
+                .series.firstOrNull { normalizeTitle(it.title) == normalizeTitle(canonical) }
                 ?.mangaBakaId
         }.getOrNull() ?: return@withContext null
         var currentId = id
