@@ -219,7 +219,7 @@ private fun HomeScreen(
             title = { Text("ManhwaKu", color = Ink, fontWeight = FontWeight.Black) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Versi native 3.0.1 · Kotlin + Jetpack Compose", color = Ink, fontSize = 12.sp)
+                    Text("Versi 3.0.2 · Kotlin + Jetpack Compose", color = Ink, fontSize = 12.sp)
                     Text("Metadata katalog: MangaBaka. Daftar chapter dan reader: MangaDex.", color = Muted, fontSize = 11.sp)
                     Text("Hanya judul dengan rating aman yang ditampilkan. Ketersediaan chapter bergantung pada bahasa dan sumber.", color = Muted, fontSize = 11.sp)
                 }
@@ -1222,8 +1222,13 @@ private fun ReaderScreen(
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Kembali", tint = Ink) }
             Column(Modifier.weight(1f)) {
                 Text(series.title, color = Ink, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("Chapter ${chapter.number} · ${languageName(chapter.language)}",
-                    color = Muted, fontSize = 9.sp)
+                Text(
+                    "Chapter ${chapter.number} · ${languageName(chapter.language)} · ${chapter.group.ifBlank { "Grup tidak tercantum" }}",
+                    color = Muted,
+                    fontSize = 9.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
             IconButton(onClick = { verticalMode = !verticalMode }) {
                 Icon(Icons.Default.MenuBook, "Ganti mode baca", tint = Accent)
